@@ -11,3 +11,5 @@ Tekmerion starts with a pinned library revision, a reproducible build, and a thr
 The first milestone is the shared contract and a local fixture-backed workflow. The first pilot covers one library and one vulnerability class, including a control variant and a reproducible test.
 
 The [Ariadne integration contract](docs/ARIADNE_CONTRACT.md) documents the protocol, evidence states, version pin, the Go adapter in `internal/ariadne` and how to test it against a real Ariadne build.
+
+[Target preparation](docs/TARGET_PREPARATION.md) (TM1) builds a pinned revision under a declared recipe, records the run manifest, maps Ariadne method identities to source lines and indexes the result with Ariadne: `go run ./cmd/tekmerion prepare -project testdata/control/project.json ...`.

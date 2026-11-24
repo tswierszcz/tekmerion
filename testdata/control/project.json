@@ -1,0 +1,30 @@
+{
+  "schema_version": "tekmerion-project-1",
+  "target": {
+    "repository": "https://github.com/tswierszcz/ariadne",
+    "revision": "baf3384fd63aca49e75abffa3735d7ad170041d3",
+    "paths": [
+      "scripts/JavaBuild.java",
+      "testdata/research/lib",
+      "testdata/research/dep",
+      "testdata/research/depold"
+    ],
+    "source_roots": [
+      {"path": "testdata/research/lib", "artifact": "lib.jar"},
+      {"path": "testdata/research/depold", "artifact": "deps/fx-dep-1.0.jar"},
+      {"path": "testdata/research/dep", "artifact": "deps/fx-dep-2.0.jar"}
+    ]
+  },
+  "build": {
+    "network": "none",
+    "steps": [
+      {"name": "deps-dir", "argv": ["mkdir", "-p", "${OUT}/deps"]},
+      {"name": "fx-dep-2.0", "argv": ["java", "scripts/JavaBuild.java", "testdata/research/dep", "${OUT}/deps/fx-dep-2.0.jar", "11"]},
+      {"name": "fx-dep-1.0", "argv": ["java", "scripts/JavaBuild.java", "testdata/research/depold", "${OUT}/deps/fx-dep-1.0.jar", "11"]},
+      {"name": "lib", "argv": ["java", "scripts/JavaBuild.java", "testdata/research/lib", "${OUT}/lib.jar", "11", "${OUT}/deps/fx-dep-2.0.jar"]},
+      {"name": "deps-list", "argv": ["sh", "-c", "printf 'fx.test:fx-dep:jar:1.0:compile\\nfx.test:fx-dep:jar:2.0:compile\\n' > \"$$1\"", "deps-list", "${OUT}/deps.txt"]}
+    ],
+    "outputs": {"app": "lib.jar", "deps": "deps", "deps_list": "deps.txt"}
+  },
+  "scenario": {"roots": "api", "profile": "generic"}
+}
