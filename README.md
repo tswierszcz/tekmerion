@@ -9,3 +9,5 @@ Tekmerion starts with a pinned library revision, a reproducible build, and a thr
 [Ariadne](https://github.com/tswierszcz/ariadne) provides JVM graphs, API entry points, path evidence, and model gaps. Tekmerion owns LLM workflows, source analysis, test generation, experiment execution, and research reports. The integration uses a versioned CLI and JSON contract.
 
 The first milestone is the shared contract and a local fixture-backed workflow. The first pilot covers one library and one vulnerability class, including a control variant and a reproducible test.
+
+The [Ariadne integration contract](docs/ARIADNE_CONTRACT.md) documents the protocol, evidence states, version pin, the Go adapter in `internal/ariadne` and how to test it against a real Ariadne build.
