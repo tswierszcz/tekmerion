@@ -1,6 +1,6 @@
 # Tekmerion implementation plan
 
-Date 2026-11-24. Status PLANNED. This document specifies future implementation and the acceptance evidence for each increment.
+Date 2026-11-24. Status PLANNED. The [Ariadne contract package](docs/ARIADNE_CONTRACT.md) is pinned to an upstream commit, and the Ariadne adapter (fixture replay and the real `research index`/`query`) is implemented in `internal/ariadne`. The TM0 manifest, ledger, CLI and report remain planned. This document specifies implementation and the acceptance evidence for each increment.
 
 ## 1. Objective
 
