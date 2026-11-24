@@ -106,6 +106,7 @@ func TestAcceptanceControlLibrary(t *testing.T) {
 	// index agreeing.
 	cli := &ariadne.CLI{Binary: bin, Bundle: runs[0].Bundle.Dir, Evidence: ariadne.Recorder{Root: filepath.Join(tmp, "evidence")}}
 	locs := map[string]sourceindex.Location{}
+	withPath, withHash, libMethods := 0, 0, 0
 	var cursor any
 	for page := 0; ; page++ {
 		req, _ := json.Marshal(map[string]any{"schema_version": ariadne.QuerySchema, "analysis_id": r.Analysis.AnalysisID,
@@ -130,6 +131,15 @@ func TestAcceptanceControlLibrary(t *testing.T) {
 		for _, rec := range doc.Records {
 			if !strings.HasPrefix(rec.Method.Class, "fx.") {
 				continue
+			}
+			if rec.Source != nil && rec.Source.Path != nil {
+				withPath++
+			}
+			if rec.Source != nil && rec.Source.SourceSHA256 != nil {
+				withHash++
+			}
+			if strings.HasPrefix(rec.Method.Class, "fx.research.") {
+				libMethods++
 			}
 			loc := runs[0].Index.Resolve(rec.Method, rec.Source)
 			key := rec.Method.Class + "#" + rec.Method.Name + rec.Method.Descriptor
@@ -162,6 +172,12 @@ func TestAcceptanceControlLibrary(t *testing.T) {
 	}
 	if len(locs) == 0 {
 		t.Fatal("no fx.* methods listed")
+	}
+	// With an Ariadne that reports paths (-sources, RI4), every method had
+	// a path and every library method a hash, and both were cross-checked.
+	t.Logf("ariadne source records: %d methods, %d with path, %d with source_sha256 (sources_flag %v)", len(locs), withPath, withHash, r.Analysis.SourcesFlag)
+	if r.Analysis.SourcesFlag && (withPath != len(locs) || withHash < libMethods) {
+		t.Errorf("-sources passed but only %d/%d paths and %d/%d library hashes", withPath, len(locs), withHash, libMethods)
 	}
 }
 

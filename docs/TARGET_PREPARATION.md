@@ -47,7 +47,9 @@ Binding: `build_verified` when the file is in the exported tree the artifact was
 - Ariadne only: Ariadne's record, basis `ariadne`.
 - Both: they must agree on whatever both state. Ariadne's path must equal the indexed path or a suffix of it at a `/` boundary, since Ariadne reports it within the package tree or its `-sources` directory. Hashes must be equal and lines identical. On agreement the basis is `ariadne+tekmerion` and the stronger binding stands. Any disagreement is listed in `conflicts` and the binding becomes `unavailable`, so nothing cites it.
 
-Ariadne main (baf3384) already reports lines from the same table with binding `declared` and no path. When Ariadne lists `-sources` in `research index -h`, preparation passes the app's source root (`-sources auto`, the default; `always`/`never` override). `sources_flag` in the run manifest records whether it was passed.
+Ariadne main (baf3384) already reports lines from the same table with binding `declared` and no path. Ariadne tswierszcz/ariadne#153 (RI4, branch `research-source-paths`, not merged at the time of writing) adds `path` (package path plus `SourceFile`, e.g. `fx/research/Extractor.java`) and, with `research index -sources DIR|JAR`, `source_sha256` when exactly one file there ends with that path. Its binding stays `declared`. Tekmerion upgrades the binding to `build_verified` only when its own build of that tree agrees on path, hash and lines. When Ariadne lists `-sources` in `research index -h`, preparation passes the app's source root (`-sources auto`, the default; `always`/`never` override). Dependency roots are not passed, so dependency methods get a path but no hash from Ariadne. `sources_flag` in the run manifest records whether it was passed. The sources become part of the bundle identity, so the `analysis_id` differs from one indexed without `-sources`. It does not depend on the work directory.
+
+The index stays the fallback for an Ariadne without RI4 and for anything Ariadne leaves null.
 
 ## 4. Run manifest (`tekmerion-run-manifest-1`)
 
@@ -80,7 +82,14 @@ ARIADNE_SRC=/path/to/ariadne go test ./internal/prepare -run Acceptance -v
 
 `ARIADNE_SRC` must have the pinned revision in its git history; `ARIADNE_BIN` overrides the binary. The build needs `java` with `jdk.compiler` and unprivileged user namespaces.
 
-Result on 2026-11-24 with Ariadne baf3384 (`v0.0.0-20261124123008-baf3384fd63a`) and OpenJDK 25.0.5:
+Results on 2026-11-24. The test passes with both Ariadne builds:
+
+| Ariadne | `-sources` | `analysis_id` | Ariadne source records (17 `fx.*` methods) |
+|---|---|---|---|
+| main `baf3384` | not offered | `sha256:9b67ddf2…5b09b815` | lines only; agree with the index |
+| #153 `3c999a8` | passed | `sha256:6d38e4db…63e9b007` | 17 paths, 14 hashes (the library's); all agree |
+
+Identities with Ariadne baf3384 (`v0.0.0-20261124123008-baf3384fd63a`) and OpenJDK 25.0.5:
 
 | Identity | Value |
 |---|---|
