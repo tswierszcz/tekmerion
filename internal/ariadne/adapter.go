@@ -299,6 +299,7 @@ type IndexOptions struct {
 	Scope    string // -scope: "" (producer default, all), "all" or "reachable"
 	Profile  string // -profile
 	CacheDir string // -cache-dir: read-only reference data; indexing is offline
+	Sources  string // -sources: source directory Ariadne hash-verifies Source.path against
 	Out      string // -out: bundle directory; must not exist
 	Extra    []string
 	Env      []string
@@ -325,7 +326,7 @@ func Index(ctx context.Context, binary string, o IndexOptions) (*IndexResult, er
 	argv := []string{binary, "research", "index", "-roots", o.Roots}
 	for _, f := range []struct{ flag, v string }{
 		{"-app", o.App}, {"-deps", o.Deps}, {"-deps-list", o.DepsList}, {"-scope", o.Scope},
-		{"-profile", o.Profile}, {"-cache-dir", o.CacheDir},
+		{"-profile", o.Profile}, {"-cache-dir", o.CacheDir}, {"-sources", o.Sources},
 	} {
 		if f.v != "" {
 			argv = append(argv, f.flag, f.v)
@@ -361,6 +362,16 @@ func Index(ctx context.Context, binary string, o IndexOptions) (*IndexResult, er
 		return r, fmt.Errorf("indexed bundle has scope %q, asked for %q", r.Bundle.Scope, o.Scope)
 	}
 	return r, nil
+}
+
+// IndexHasFlag reports whether `binary research index -h` lists -name, for
+// flags newer than the pinned contract (such as -sources).
+func IndexHasFlag(ctx context.Context, binary, name string) bool {
+	var out bytes.Buffer
+	cmd := exec.CommandContext(ctx, binary, "research", "index", "-h")
+	cmd.Stdout, cmd.Stderr = &out, &out
+	_ = cmd.Run() // -h exits non-zero with the flag package
+	return regexp.MustCompile(`(?m)^\s*-` + regexp.QuoteMeta(name) + `\b`).Match(out.Bytes())
 }
 
 func lastLine(b []byte) string {
