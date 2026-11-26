@@ -16,11 +16,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tswierszcz/tekmerion/internal/ariadne"
 	"github.com/tswierszcz/tekmerion/internal/audit"
 	"github.com/tswierszcz/tekmerion/internal/experiment"
+	"github.com/tswierszcz/tekmerion/internal/export"
 	"github.com/tswierszcz/tekmerion/internal/gateway"
 	"github.com/tswierszcz/tekmerion/internal/hunt"
 	"github.com/tswierszcz/tekmerion/internal/jsonx"
@@ -51,6 +53,8 @@ func main() {
 		err = cmdExperiment(ctx, os.Args[2:])
 	case "validate":
 		err = cmdValidate(ctx, os.Args[2:])
+	case "export":
+		err = cmdExport(ctx, os.Args[2:])
 	case "recon":
 		err = cmdRecon(ctx, os.Args[2:])
 	case "infer":
@@ -72,6 +76,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
+  tekmerion export -hunt HUNT_STATE [-run EXPERIMENT_OR_VALIDATION_STATE ...] -provenance control|real -out NEW_DIR [-generated-at RFC3339]
+  tekmerion export -verify DIR
   tekmerion validate -experiment EXPERIMENT_STATE (-print-context | -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE))
   tekmerion experiment -hunt HUNT_STATE -work DIR -spec FILE -candidate ID -state NEW_DIR
   tekmerion hunt -recon RECON_STATE -work DIR -ariadne BIN -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE)
@@ -770,4 +776,38 @@ func cmdValidate(ctx context.Context, args []string) error {
 		return err
 	}
 	return cmdAudit(ctx, "status", []string{"-state", *dir})
+}
+
+type multiFlag []string
+
+func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
+func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
+
+func cmdExport(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	huntDir := fs.String("hunt", "", "completed Hunt state directory (candidates and coverage)")
+	var runs multiFlag
+	fs.Var(&runs, "run", "experiment or validation state derived from the Hunt run (repeatable)")
+	out := fs.String("out", "", "new export directory")
+	provenance := fs.String("provenance", "", "control or real")
+	at := fs.String("generated-at", "", "RFC3339 generation time (default: latest included run)")
+	verify := fs.String("verify", "", "verify an existing export directory and exit")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("export takes no positional arguments")
+	}
+	if *verify != "" {
+		if err := export.Verify(*verify); err != nil {
+			return err
+		}
+		fmt.Println("export verified:", *verify)
+		return nil
+	}
+	if err := export.Export(ctx, export.Options{Hunt: *huntDir, Runs: runs, Out: *out, Provenance: *provenance, GeneratedAt: *at}); err != nil {
+		return err
+	}
+	fmt.Println("export written and verified:", *out)
+	return nil
 }

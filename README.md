@@ -20,7 +20,7 @@ The [Ariadne integration contract](docs/ARIADNE_CONTRACT.md) documents the proto
 
 The [Recon → Hunt → Validate implementation plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md) defines the next increments, adapting selected Cloudflare security-audit practices to Tekmerion and Ariadne.
 
-The bounded model gateway uses [OpenRouter](https://openrouter.ai), with explicit models/providers for Recon, Hunt and Validate. Offline cost estimates, durable reservations and spending reconciliation are implemented. Prepared-source Recon, bounded Hunt and static triage are implemented below. Checked-in runtime experiments are implemented below. Independent validation is implemented below. Generated harnesses, the final RH-T6 report, catalogue refresh and bounded calibration remain planned.
+The bounded model gateway uses [OpenRouter](https://openrouter.ai), with explicit models/providers for Recon, Hunt and Validate. Offline cost estimates, durable reservations and spending reconciliation are implemented. Prepared-source Recon, bounded Hunt and static triage are implemented below. Checked-in runtime experiments are implemented below. Independent validation and the final report export are implemented below. Generated harnesses, the real-library pilot, catalogue refresh and bounded calibration remain planned.
 
 Planned research inputs include a supplied JVM binary, pinned source and an optional CVE evidence package. Runs can confirm a known issue and search for distinct variants under separate budgets. Final exports are Markdown/JSON reports with linked evidence and reproducers; the [harness plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md) defines the input and report contracts.
 
@@ -219,4 +219,17 @@ go run ./cmd/tekmerion report -state /tmp/tekmerion-validate > /tmp/tekmerion-va
 The verifier context contains the candidate's claims (principal, resource, controlled input, conditions, mechanism, effect), the root-cause citation, bounded source excerpts, static axes, the recorded experiment cases, harness and correction patch, and every known gap. It does not contain Hunt's reasoning beyond those claims or any other verifier's conclusion. `-print-context` shows the context and its `input_identity` for a recorded `-replay FILE` (`tekmerion-validate-result-1`). The model mode is a paid operation through the same gateway, budget and route checks; `testdata/validate/model.json` uses synthetic route names.
 
 The verifier must assess every claim exactly once as `supported`, `refuted` or `unresolved`, cite supplied excerpts or experiment case ids, list reconstructed controls with citations and keep every gap. It cannot add candidates, severity or labels. `tekmerion-decision-rules-1` then derives the label: any refuted claim gives `rejected`; every claim supported plus a reproduced experiment plus a reproduced fresh replay gives `confirmed`; anything else is `needs_validation` with each missing fact named. Novelty stays `undetermined`. A confirmed label is bounded to the investigated scope and is not a CVE or severity claim. The verifier instruction is original wording; its upstream concepts and pinned blocks are recorded in `internal/validate/instructions.json`.
+
+## Final report and evidence export (RH-T6)
+
+`export` assembles one Hunt run and any experiment and validation runs derived from it into a verified, self-contained directory. It reads saved state only and makes no model calls:
+
+```sh
+go run ./cmd/tekmerion export -hunt /tmp/tekmerion-hunt-model -run /tmp/tekmerion-experiment -run /tmp/tekmerion-validate-model -provenance control -out /tmp/tekmerion-export
+go run ./cmd/tekmerion export -verify /tmp/tekmerion-export
+```
+
+The output has `report.json` (`tekmerion-report-1`), `report.md` rendered from the same data, and `evidence/` with every referenced artifact under its SHA-256, `index.json`, one `finding.json` per candidate and a reproducer per experiment (spec, harness, correction patch and a README with commands and recorded outcomes). Each candidate appears once, with its label, the reasons and rules behind it, prerequisites with verifier statuses, API occurrences with static axes, reproductions, reviews and unresolved facts. Candidates without a decision are `needs_validation` with the missing step named. The report also lists coverage, per-run spend and gaps.
+
+Runs must derive from the given Hunt run. An experiment archived inside a validation run is used when its directory is not supplied, and is not counted twice. `-provenance control|real` is required. `-generated-at` makes the output reproducible (the default is the latest included run's start). The export is written to a temporary sibling, verified and renamed: artifact and file hashes, `report.md` matching `report.json`, and every link and evidence path. `-verify` repeats those checks later. Novelty stays undetermined and no severity or CVE is implied.
 
