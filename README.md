@@ -16,7 +16,7 @@ The [Ariadne integration contract](docs/ARIADNE_CONTRACT.md) documents the proto
 
 The [Recon → Hunt → Validate implementation plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md) defines the next increments, adapting selected Cloudflare security-audit practices to Tekmerion and Ariadne.
 
-The bounded model gateway uses [OpenRouter](https://openrouter.ai), with explicit models/providers for Recon, Hunt and Validate. Offline cost estimates, durable reservations and spending reconciliation are implemented. Prepared-source Recon, bounded Hunt and static triage are implemented below. Runtime experiments, independent Validate, catalogue refresh and bounded calibration remain planned.
+The bounded model gateway uses [OpenRouter](https://openrouter.ai), with explicit models/providers for Recon, Hunt and Validate. Offline cost estimates, durable reservations and spending reconciliation are implemented. Prepared-source Recon, bounded Hunt and static triage are implemented below. Checked-in runtime experiments are implemented below. Generated harnesses, independent Validate, catalogue refresh and bounded calibration remain planned.
 
 Planned research inputs include a supplied JVM binary, pinned source and an optional CVE evidence package. Runs can confirm a known issue and search for distinct variants under separate budgets. Final exports are Markdown/JSON reports with linked evidence and reproducers; the [harness plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md) defines the input and report contracts.
 
@@ -38,7 +38,7 @@ go run ./cmd/tekmerion report -state /tmp/tekmerion-fixture-run -format json > /
 
 `audit` requires explicit `-fixture`; `-contract DIR` selects a pinned contract package (default `contracts/ariadne/v1`, with its sibling `PIN.json`). The complete request queue and manifest are committed before execution. `resume` preserves completed work and verifies that the saved pin still matches the package. A live lease is never forcibly stolen. After a hard stop, wait for its one-minute fixture lease to expire before resuming; the next claim records the old attempt as interrupted. An interrupted attempt can be retried immediately when its owner commits a graceful interruption. Failed tasks remain terminal and diagnostic evidence remains available.
 
-State schema `tekmerion-state-5` automatically migrates version-1 through version-4 ledgers while preserving inputs, attempt history and budget accounting. State lives in `state.sqlite` (plus SQLite WAL files), with complete evidence bytes in `artifacts/<sha256-hex>`. Keep the directory together; use a SQLite-aware backup if copying while a writer is active. Raw responses, diagnostics, validation scope and hashes are linked from attempt result artifacts. Identical result redelivery is a no-op; a contradictory result or an old lease cannot replace the accepted result. Artifact reads and report generation verify saved hashes.
+State schema `tekmerion-state-6` automatically migrates version-1 through version-5 ledgers while preserving inputs, attempt history and budget accounting. State lives in `state.sqlite` (plus SQLite WAL files), with complete evidence bytes in `artifacts/<sha256-hex>`. Keep the directory together; use a SQLite-aware backup if copying while a writer is active. Raw responses, diagnostics, validation scope and hashes are linked from attempt result artifacts. Identical result redelivery is a no-op; a contradictory result or an old lease cannot replace the accepted result. Artifact reads and report generation verify saved hashes.
 
 `status` reads the ledger without claiming work. `report` regenerates a deterministic Markdown or JSON fixture ledger from saved state, including interrupted/running work, without loading the original fixture package or calling a model. Save Markdown in the state directory as above so its relative evidence links resolve. This is not the final RH-T6 research report schema.
 
@@ -182,3 +182,20 @@ For candidates, the controller batches at most eight exact selectors, restrictin
 Exact fingerprints include repository, root-cause JVM method, source path/anchor, boundary, property and mechanism. Different entry paths share an exact cause but retain separate hypothesis/prerequisite/static occurrences. No semantic similarity deduplication is attempted. Each local triage task atomically commits candidate occurrences and a coverage event with its result; collisions and contradictory redelivery fail. Hunt and triage are separate tasks, so accepted model output survives an interruption without another model call. A five-minute live triage lease must expire after a hard stop. Completed units remain reportable when a later unit exhausts the budget.
 
 The independent axes remain `defect=candidate`, `reproduction=not_run`, `novelty=undetermined`. Controlled experiments (RH-T4), independent verification (RH-T5), richer logged context expansion, CVE evidence packages and the final RH-T6 report/pilot remain follow-up work.
+
+## Controlled experiments (RH-T4, first increment)
+
+`experiment` derives a new run from a completed Hunt and runs one candidate's checked-in harness against the original pinned library through its public API. It makes no model requests. The worker needs `bwrap`, `prlimit` and a systemd user manager (`systemd-run --user --scope`). Without them the capability probe blocks the run instead of executing the target unconfined.
+
+```sh
+go run ./cmd/tekmerion experiment -hunt /tmp/tekmerion-hunt-model -work /tmp/tekmerion-control -spec testdata/experiments/extractor/experiment.json -candidate sha256:... -state /tmp/tekmerion-experiment
+go run ./cmd/tekmerion report -state /tmp/tekmerion-experiment > /tmp/tekmerion-experiment/report.md
+go run ./cmd/tekmerion resume -state /tmp/tekmerion-experiment
+```
+
+The candidate ID comes from the Hunt report or JSON status. An offline Hunt has no candidates; use a replay or model Hunt. A spec (`tekmerion-experiment-1`) names the harness, a heap size, the sandbox limits (wall, CPU, memory, tasks, file size, open files, captured output; none may be unlimited) and 2–16 cases with roles `normal`, `candidate` or `control`. [testdata/experiments/extractor](testdata/experiments/extractor) calls `fx.research.Extractor#extract` with a plain and a `../` entry name.
+
+Each case runs in a fresh worker. The system, the prepared `out/` classpath and the harness are read-only, network is unshared and the environment is cleared. The harness receives `/case/jail` as its first argument. `/case` and an observed `/tmp` are the only writable locations. After the worker has terminated, host code lists both without following links and promotes bounded regular files. Anything outside `jail` is a confinement violation. The prepared target is verified before and after each case.
+
+Reports show the capability checks, each case's outcome, escaped paths, promoted files and worker output, and the reproduction axis. `reproduced` requires every candidate case to violate the property while every normal and control case holds it. A reproduction is evidence for later independent verification (RH-T5), not a confirmed finding: defect stays `candidate` and novelty `undetermined`. Generated harnesses, corrective-patch variants and Jazzer remain follow-up work.
+

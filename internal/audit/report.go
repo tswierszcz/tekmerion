@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tswierszcz/tekmerion/internal/experiment"
 	"github.com/tswierszcz/tekmerion/internal/gateway"
 	"github.com/tswierszcz/tekmerion/internal/hunt"
 	"github.com/tswierszcz/tekmerion/internal/jsonx"
@@ -54,7 +55,8 @@ func Report(ctx context.Context, dir, format string) ([]byte, error) {
 	model := m.Schema == gateway.RunSchema && m.Mode == "model"
 	isRecon := m.Schema == recon.RunSchema && (m.Mode == "recon-offline" || m.Mode == "recon-replay" || m.Mode == "recon-model")
 	isHunt := m.Schema == hunt.RunSchema && (m.Mode == "hunt-offline" || m.Mode == "hunt-replay" || m.Mode == "hunt-model")
-	if !fixture && !model && !isRecon && !isHunt {
+	isExperiment := m.Schema == experiment.RunSchema && m.Mode == "checked-in-harness"
+	if !fixture && !model && !isRecon && !isHunt && !isExperiment {
 		return nil, fmt.Errorf("unsupported report manifest")
 	}
 	if format == "json" {
@@ -65,6 +67,13 @@ func Report(ctx context.Context, dir, format string) ([]byte, error) {
 	if fixture {
 		fmt.Fprintf(&b, "# Tekmerion fixture ledger\n\nRun: `%s`\n\nStatus: **%s**\n\n", snap.Run.ID, snap.Run.Status)
 		b.WriteString("Provenance: **fixture**. This run replays static contract examples; it does not investigate a real library or establish vulnerabilities. Paid model requests: **0**.\n\n")
+	} else if isExperiment {
+		fmt.Fprintf(&b, "# Tekmerion experiment ledger\n\nRun: `%s`\n\nStatus: **%s**\n\nMode: **%s**. Paid model requests: **0**.\n\n", snap.Run.ID, snap.Run.Status, m.Mode)
+		details, err := experiment.Report(ctx, s, snap)
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString(details)
 	} else if isHunt {
 		fmt.Fprintf(&b, "# Tekmerion Hunt ledger\n\nRun: `%s`\n\nStatus: **%s**\n\nMode: **%s**.\n\n", snap.Run.ID, snap.Run.Status, m.Mode)
 		details, err := hunt.Report(ctx, s, snap)
