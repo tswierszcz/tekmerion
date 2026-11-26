@@ -36,34 +36,37 @@ type Querier interface {
 // Result is one attempt. RawRequest and RawResponse are the bytes that were
 // sent and received; they are saved unmodified under Dir.
 type Result struct {
-	Provenance  string
-	Outcome     string
-	Exit        int
-	Request     *RequestHead
-	Response    *Response // nil when there was no parseable response
-	RawRequest  []byte
-	RawResponse []byte
-	Stderr      []byte
-	Dir         string // evidence directory of this attempt ("" when not recorded)
+	Provenance      string
+	Outcome         string
+	Exit            int
+	Request         *RequestHead
+	Response        *Response // nil when there was no parseable response
+	RawRequest      []byte
+	RawResponse     []byte
+	Stderr          []byte
+	bundleDir       string
+	ValidationScope string // response or bundle; empty when unusable
+	Dir             string // evidence directory of this attempt ("" when not recorded)
 }
 
 // Attempt is the attempt.json record written next to the raw evidence.
 type Attempt struct {
-	Provenance   string    `json:"provenance"`
-	Outcome      string    `json:"outcome"`
-	Exit         int       `json:"exit"`
-	RequestID    string    `json:"request_id,omitempty"`
-	AnalysisID   string    `json:"analysis_id,omitempty"`
-	Operation    string    `json:"operation,omitempty"`
-	ErrorCode    string    `json:"error_code,omitempty"`
-	Diagnostic   string    `json:"diagnostic,omitempty"`
-	Argv         []string  `json:"argv,omitempty"`
-	BinarySHA256 string    `json:"binary_sha256,omitempty"`
-	Fixture      string    `json:"fixture,omitempty"`
-	RequestHash  string    `json:"request_sha256"`
-	ResponseHash string    `json:"response_sha256,omitempty"`
-	StartedAt    time.Time `json:"started_at"`
-	Duration     string    `json:"duration"`
+	Provenance      string    `json:"provenance"`
+	Outcome         string    `json:"outcome"`
+	Exit            int       `json:"exit"`
+	RequestID       string    `json:"request_id,omitempty"`
+	AnalysisID      string    `json:"analysis_id,omitempty"`
+	Operation       string    `json:"operation,omitempty"`
+	ErrorCode       string    `json:"error_code,omitempty"`
+	Diagnostic      string    `json:"diagnostic,omitempty"`
+	Argv            []string  `json:"argv,omitempty"`
+	BinarySHA256    string    `json:"binary_sha256,omitempty"`
+	Fixture         string    `json:"fixture,omitempty"`
+	RequestHash     string    `json:"request_sha256"`
+	ResponseHash    string    `json:"response_sha256,omitempty"`
+	StartedAt       time.Time `json:"started_at"`
+	Duration        string    `json:"duration"`
+	ValidationScope string    `json:"validation_scope,omitempty"`
 }
 
 // Recorder allocates one evidence directory per attempt under Root:
@@ -107,6 +110,19 @@ func finish(res *Result, a *Attempt, started time.Time) error {
 		res.Outcome = OutcomeNoOutput
 	default:
 		res.Response, cerr = Check(res.Request, res.Exit, res.RawResponse)
+
+		if cerr == nil {
+			res.ValidationScope = "response"
+			if res.bundleDir != "" && res.Response.Status == "ok" {
+				cerr = checkBundleEvidence(res.bundleDir, res.Request, res.RawResponse)
+				if cerr == nil {
+					res.ValidationScope = "bundle"
+				}
+			}
+		}
+		if cerr != nil {
+			res.ValidationScope = ""
+		}
 		switch {
 		case cerr != nil:
 			res.Outcome = OutcomeUnusable
@@ -132,6 +148,10 @@ func finish(res *Result, a *Attempt, started time.Time) error {
 		cerr = fmt.Errorf("ariadne response has provenance %q", res.Response.Provenance.Kind)
 		res.Outcome = OutcomeUnusable
 	}
+	if cerr != nil {
+		res.ValidationScope = ""
+	}
+	a.ValidationScope = res.ValidationScope
 	a.Provenance, a.Outcome, a.Exit = res.Provenance, res.Outcome, res.Exit
 	a.RequestID, a.AnalysisID, a.Operation = res.Request.RequestID, res.Request.AnalysisID, res.Request.Operation
 	a.RequestHash = sha256Of(res.RawRequest)
@@ -186,7 +206,7 @@ func (c *CLI) Query(ctx context.Context, request []byte) (*Result, error) {
 		return nil, err
 	}
 	argv := []string{c.Binary, "research", "query", "-bundle", c.Bundle, "-request", reqPath, "-out", respPath}
-	res := &Result{Provenance: ProvenanceAnalysis, Request: head, RawRequest: request, Dir: dir}
+	res := &Result{Provenance: ProvenanceAnalysis, Request: head, RawRequest: request, Dir: dir, bundleDir: c.Bundle}
 	a := Attempt{Argv: argv, BinarySHA256: c.binarySHA}
 	started := time.Now()
 	var stderr bytes.Buffer

@@ -159,12 +159,17 @@ func Load(file string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
+	return Parse(raw)
+}
+
+// Parse reads an already hash-verified index snapshot without reopening files.
+func Parse(raw []byte) (*Index, error) {
 	var ix Index
 	if err := json.Unmarshal(raw, &ix); err != nil {
-		return nil, fmt.Errorf("%s: %w", file, err)
+		return nil, fmt.Errorf("source index: %w", err)
 	}
 	if ix.SchemaVersion != Schema {
-		return nil, fmt.Errorf("%s: schema %q, want %q", file, ix.SchemaVersion, Schema)
+		return nil, fmt.Errorf("source index: schema %q, want %q", ix.SchemaVersion, Schema)
 	}
 	ix.reindex()
 	return &ix, nil

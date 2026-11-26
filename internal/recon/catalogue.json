@@ -1,0 +1,17 @@
+{
+  "schema_version": "tekmerion-property-catalogue-1",
+  "revision": "file-confinement-1",
+  "properties": [{
+    "id": "file-confinement",
+    "boundary": "caller-controlled-input=>filesystem-scope",
+    "invariant": "Under the declared caller/configuration assumptions, file operations remain within the authorized filesystem scope.",
+    "questions": ["Which values and path components can the lower-trust caller supply?", "What path decoding, normalization or link resolution occurs before the filesystem effect?", "What checks constrain the final object used, including alternate API paths?", "Which authority and filesystem facts remain unknown?"],
+    "status": "candidate property; applicability requires source-grounded assessment"
+  }],
+  "instruction_sources": [{
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "revision": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+    "blocks": ["skills/security-audit/RECONNAISSANCE.md#Agent 1b: Principals, authority, and controls", "skills/security-audit/RECONNAISSANCE.md#Agent 1c: Entry surfaces, copies, and sinks", "skills/security-audit/RECONNAISSANCE.md#Deterministic coverage ledger", "skills/security-audit/ATTACK-CLASSES.md#Resource and file handling"],
+    "adaptation": "Original Tekmerion wording: source-linked architecture questions and canonical coverage tuples, bounded to a JVM library. No upstream agent orchestration or finding labels are executed."
+  }]
+}

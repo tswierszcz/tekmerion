@@ -1,6 +1,12 @@
 # Tekmerion implementation plan
 
-Date 2026-11-24. Status PLANNED. The [Ariadne contract package](docs/ARIADNE_CONTRACT.md) is pinned to an upstream commit, and the Ariadne adapter (fixture replay and the real `research index`/`query`) is implemented in `internal/ariadne`. TM1 target preparation (controlled build, run manifest, source index, real `research index`) is implemented; see [Target preparation](docs/TARGET_PREPARATION.md). The TM0 ledger and report remain planned. This document specifies implementation and the acceptance evidence for each increment.
+Date 2026-11-24. Status PLANNED. The [Ariadne contract package](docs/ARIADNE_CONTRACT.md) is pinned to an upstream commit, and the Ariadne adapter (fixture replay and the real `research index`/`query`) is implemented in `internal/ariadne`. TM1 target preparation (controlled build, run manifest, source index, real `research index`) is implemented; see [Target preparation](docs/TARGET_PREPARATION.md). TM0 now includes a SQLite-backed fixture ledger and deterministic fixture Markdown/JSON exports; budget admission/accounting and offline model-cost estimates are implemented; the full research ledger and final research report remain planned. This document specifies implementation and the acceptance evidence for each increment.
+
+## Current implementation priority (2026-11-25)
+
+The [Recon → Hunt → Validate plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md) refines the next TM0–TM6 increments. Start with strict adapter evidence acceptance (RH-T0) and persistent state (RH-T1), then Recon and hypothesis discovery. It records the Cloudflare source revision, adaptation policy, independent verification and the H0–H5 coordination milestones with Ariadne. Existing implementation status is unchanged by this planning update.
+
+Implementation started (2026-11-25): the first RH-T0 increment adds strict response-schema and evidence validation to the Tekmerion adapter, hash-bound bundle checks and regression tests. Fixture and real Ariadne full/reachable integration tests pass. The follow-up adds graph-wide selected-class/method ownership and canonical/receiver-specialization checks, schema validation of all bundle records and regressions for hash-valid invalid graphs. All 28 contract cases and `go vet` pass. The listed Tekmerion graph checks are implemented; shared H0 acceptance against the separate Ariadne RH-A0 changes remains pending. See the harness plan for scope and evidence. RH-T1 has started: SQLite run/task/attempt/artifact storage, expiring exclusive leases, immutable attempt history and fixture-only audit/resume/status/report commands are implemented. The follow-up adds state schema 2 with version-1 migration, fixed-point budget configuration, atomic paid-task/request admission, protected stage reserves, uncertain-charge retention and idempotent settlement. Status/report expose the durable accounting; `audit -fixture` accepts an optional budget file. State schema 3 adds one-shot dispatch fencing and saved forecasts. Offline `estimate` and explicit bounded `infer` use a replaceable OpenRouter adapter with role-specific inputs, local structured-output checks, usage/cost recording and reserved retries. They are tested with synthetic/local HTTP only. RH-T2 now connects prepared source/API context to strict Recon output and immutable initial coverage, with offline/replay modes and an optional bounded model path. New preparations retain original project bytes for reliable hash verification. The first RH-T3 increment now adds bounded per-unit Hunt, strict source/authority/anchor validation, exact root-cause fingerprints with multiple entry occurrences, bundle-validated static triage and append-only coverage events in state schema 5. Offline/replay/model queues resume accepted output without another paid request, preserve partial results on budget exhaustion and report static uncertainty separately from defect/reproduction/novelty. Real Ariadne control tests use a local synthetic model. Runtime experiments, independent Validate, richer context expansion, cross-run coverage reconciliation, catalogue refresh and calibration remain planned.
 
 ## 1. Objective
 
@@ -26,7 +32,7 @@ The first pilot covers one library, one revision, one execution scenario, and on
 
 The companion Ariadne plan is `RECOMMENDATION/RESEARCH_INTERFACE_IMPLEMENTATION_PLAN.MD` in [tswierszcz/ariadne](https://github.com/tswierszcz/ariadne). Its phases are RI0–RI6. This plan uses TM0–TM6.
 
-Proposed implementation language is Go, consistent with the repository's initial tooling and the Ariadne ecosystem. Start with a CLI, JSON files, subprocess adapters, and a provider-neutral LLM HTTP adapter. Tool versions and the tested execution environment are pinned in each run. Additional infrastructure follows measured needs from the pilot.
+Proposed implementation language is Go, consistent with the repository's initial tooling and the Ariadne ecosystem. Start with a CLI, JSON files, subprocess adapters, and a replaceable LLM HTTP adapter whose first live integration is OpenRouter (`https://openrouter.ai/api/v1`, credential via `OPENROUTER_API_KEY`). Recon, Hunt and Validate select explicit model identifiers independently. Tool versions and the tested execution environment are pinned in each run. Additional infrastructure follows measured needs from the pilot.
 
 ## 3. Inputs and run identity
 
@@ -45,6 +51,8 @@ A versioned project manifest contains the following fields.
 Secrets are referenced through the execution environment and excluded from saved manifests and model context. The manifest records the presence and purpose of a required secret without its value. Build dependencies and tool downloads happen in a preparation stage whose inputs and results are recorded.
 
 `run_id` identifies an execution. Artifact hashes, source revision, configuration and analysis identifiers determine whether work can be reused. A retry receives an attempt identifier and preserves the preceding attempt's evidence. State is committed atomically after each stage.
+
+The planned input extension accepts a supplied binary, pinned source and optional CVE package (identifier alone, references, corrective commit/patch or reproducer). Goals are `discovery`, `confirm_cve` and `confirm_and_find_variants`, with separate confirmation, variant and broader-discovery budgets. Binary/source correspondence, cached evidence provenance and manifest migration are specified in the [harness plan](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md#research-inputs-and-cve-guided-investigation). These fields are not accepted by the current strict project schema.
 
 ## 4. Results and evidence model
 
@@ -69,6 +77,8 @@ Keep these assessment axes independent.
 An execution failure remains attached to the candidate. A crash or method entry needs an evaluated security assertion before the report claims an observed security effect. Conditions configured by the harness are listed explicitly. A known-issue lookup with no match leaves novelty unestablished.
 
 The run summary lists source/build identity, analyzed API areas, property families, hypotheses by outcome, gaps, skipped work, coverage, resource cost and reproduction instructions. A zero-finding report includes the scope and unresolved work.
+
+The planned final export contains `report.md`, versioned `report.json` and a hash-linked evidence/reproducer tree. It covers known-CVE applicability, variant relationships, independent assessment axes, controls/replay, coverage limits and budget reconciliation; see the [final report contract](docs/RESEARCH_HARNESS_IMPLEMENTATION_PLAN.md#final-report-contract). Reports regenerate from saved state without paid LLM calls.
 
 ## 5. Discovering hypotheses from an empty input
 
@@ -105,6 +115,8 @@ Ariadne owns the authoritative bundle, query and response schemas. Tekmerion pin
 
 The adapter preserves raw requests and responses and validates `analysis_id`, schemas, target identity and truncation. A missing target, a shadowed copy or an incomplete search produces the corresponding evidence state. Root selections follow the indexed graph's restrictions. CodeQL source-level results and Ariadne bytecode-level results retain their separate evidence bases and matching assumptions.
 
+Ariadne is the initial static evidence backend required by the real JVM pilot. Its adapter supplies reusable, independently inspectable graph facts. Incomplete static evidence leaves an explicit gap; experiment assertions and final vulnerability decisions belong to Tekmerion.
+
 During RI0 development, a fixture adapter may implement the agreed contract. Its responses explicitly identify fixture provenance. The real pilot requires the actual Ariadne CLI. Contract changes receive a migration example and consumer tests before updating the pinned dependency.
 
 ## 7. Execution and verification
@@ -137,6 +149,7 @@ For a supported candidate, minimize the input and harness while preserving the o
 - Store raw evidence, hashes, stage outcomes and attempt records.
 - Add a report for the fixture run with explicit fixture provenance.
 - Verify a restart, malformed data and an exhausted budget with useful failures.
+- Add preflight budget estimates, bounded calibration, atomic request reservations and uncertain-charge reconciliation as specified in RH-T1a–RH-T1b. Preserve validation/reporting reserves across resume.
 
 ### TM1 — reproducible target preparation
 
@@ -149,7 +162,7 @@ For a supported candidate, minimize the input and harness while preserving the o
 ### TM2 — discovery
 
 - Implement the file-confinement property entry and context selection.
-- Add a provider-neutral LLM adapter with structured output validation, request recording and bounded retries.
+- Implement the OpenRouter adapter behind a replaceable interface, with per-role models, structured output validation, usage/cost recording and bounded retries.
 - Supply a deterministic replay provider for tests and optional paid/live execution for explicit research runs.
 - Verify candidate citations, selectors and assumptions, then deduplicate and prioritize.
 - Assess the empty-hypothesis starting case on the control library.

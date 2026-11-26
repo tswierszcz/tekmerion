@@ -244,15 +244,16 @@ type File struct {
 
 // Run is the run manifest written by target preparation.
 type Run struct {
-	SchemaVersion string          `json:"schema_version"`
-	PreparedAt    time.Time       `json:"prepared_at"`
-	Project       json.RawMessage `json:"project"`        // the project manifest
-	ProjectSHA256 string          `json:"project_sha256"` // of the project file's bytes
-	Source        Source          `json:"source"`
-	Build         Build           `json:"build"`
-	Artifacts     Artifacts       `json:"artifacts"`
-	SourceIndex   SourceIndex     `json:"source_index"`
-	Analysis      *Analysis       `json:"analysis,omitempty"` // absent when no Ariadne binary was given
+	SchemaVersion   string          `json:"schema_version"`
+	PreparedAt      time.Time       `json:"prepared_at"`
+	Project         json.RawMessage `json:"project"`                    // the project manifest
+	ProjectOriginal []byte          `json:"project_original,omitempty"` // original project-file bytes (base64 in JSON)
+	ProjectSHA256   string          `json:"project_sha256"`             // of the project file's bytes
+	Source          Source          `json:"source"`
+	Build           Build           `json:"build"`
+	Artifacts       Artifacts       `json:"artifacts"`
+	SourceIndex     SourceIndex     `json:"source_index"`
+	Analysis        *Analysis       `json:"analysis,omitempty"` // absent when no Ariadne binary was given
 }
 
 // Source is the verified source revision.

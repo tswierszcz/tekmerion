@@ -8,12 +8,19 @@ import (
 // RequestHead is what the adapter reads from a request to check its answer.
 // The raw request is what is sent and saved; this is never re-encoded.
 type RequestHead struct {
-	SchemaVersion string `json:"schema_version"`
-	AnalysisID    string `json:"analysis_id"`
-	RequestID     string `json:"request_id"`
-	Operation     string `json:"operation"`
-	Targets       []struct {
-		ID string `json:"id"`
+	SchemaVersion string           `json:"schema_version"`
+	AnalysisID    string           `json:"analysis_id"`
+	RequestID     string           `json:"request_id"`
+	Operation     string           `json:"operation"`
+	Limits        map[string]int64 `json:"limits"`
+	Roots         struct {
+		Selection string   `json:"selection"`
+		NodeIDs   []string `json:"node_ids"`
+	} `json:"roots"`
+	Targets []struct {
+		ID       string            `json:"id"`
+		MethodID string            `json:"method_id"`
+		Selector map[string]string `json:"selector"`
 	} `json:"targets"`
 }
 
@@ -66,7 +73,7 @@ type Response struct {
 type TargetResult struct {
 	TargetID        string `json:"target_id"`
 	Resolution      string `json:"resolution"`
-	TotalEntryCount int    `json:"total_entry_count"`
+	TotalEntryCount *int   `json:"total_entry_count"`
 	Search          struct {
 		State        string `json:"state"`
 		WorkComplete bool   `json:"work_complete"`
@@ -117,6 +124,10 @@ func ExitFor(r *Response) int {
 func Check(req *RequestHead, exit int, raw []byte) (*Response, error) {
 	if exit != 0 && exit != 1 && exit != 2 {
 		return nil, fmt.Errorf("exit status %d is outside the contract (0, 1, 2)", exit)
+	}
+	doc, err := validateResponseSchema(raw)
+	if err != nil {
+		return nil, fmt.Errorf("response schema: %w", err)
 	}
 	var r Response
 	if err := json.Unmarshal(raw, &r); err != nil {
@@ -174,6 +185,9 @@ func Check(req *RequestHead, exit int, raw []byte) (*Response, error) {
 				return &r, fmt.Errorf("result %d is target %q, request has %q there", i, res.TargetID, ids[i])
 			}
 		}
+	}
+	if err := checkEvidence(req, doc); err != nil {
+		return &r, err
 	}
 	return &r, nil
 }

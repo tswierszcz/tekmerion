@@ -16,8 +16,9 @@ import (
 // is the same JSON document as a recorded one; anything else is an error.
 // Every Result it returns has Provenance "fixture".
 type Fixture struct {
-	Evidence Recorder
-	pairs    map[string]fixturePair
+	Evidence  Recorder
+	bundleDir string
+	pairs     map[string]fixturePair
 }
 
 type fixturePair struct{ request, response string }
@@ -44,7 +45,7 @@ func NewFixture(contractDir string, evidence Recorder) (*Fixture, error) {
 	if cases.ContractRevision != ContractRevision {
 		return nil, fmt.Errorf("cases.json is contract %s, adapter implements %s", cases.ContractRevision, ContractRevision)
 	}
-	f := &Fixture{Evidence: evidence, pairs: map[string]fixturePair{}}
+	f := &Fixture{Evidence: evidence, bundleDir: filepath.Join(contractDir, "fixtures", "bundle"), pairs: map[string]fixturePair{}}
 	for _, c := range cases.Cases {
 		// Negative cases reuse a request with a deliberately broken
 		// response; only conforming pairs are replayable answers.
@@ -111,7 +112,7 @@ func (f *Fixture) Query(_ context.Context, request []byte) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Provenance: ProvenanceFixture, Request: head, RawRequest: request, RawResponse: raw}
+	res := &Result{Provenance: ProvenanceFixture, Request: head, RawRequest: request, RawResponse: raw, bundleDir: f.bundleDir}
 	var env Response
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return nil, fmt.Errorf("fixture %s: %w", pair.response, err)

@@ -238,8 +238,8 @@ func controlLibrary(t *testing.T, bin, data, scope string) {
 		t.Errorf("save-bytes entries %+v", r.Entries)
 	}
 	// (e): three entries, none client dispatch.
-	if r := res.Response.Results[3]; r.TotalEntryCount != 3 {
-		t.Errorf("wipe: %d entries", r.TotalEntryCount)
+	if r := res.Response.Results[3]; r.TotalEntryCount == nil || *r.TotalEntryCount != 3 {
+		t.Errorf("wipe: %v entries", r.TotalEntryCount)
 	} else {
 		for _, e := range r.Entries {
 			if e.ClientDispatch {

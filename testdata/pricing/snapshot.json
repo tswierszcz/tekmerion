@@ -1,0 +1,19 @@
+{
+  "schema_version": "tekmerion-pricing-1",
+  "source": "synthetic:offline-example; not current market prices",
+  "currency": "USD",
+  "retrieved_at": "2026-11-25T00:00:00Z",
+  "valid_until": "2026-11-26T00:00:00Z",
+  "routes": [
+    {
+      "model": "example/model",
+      "provider": "example-provider",
+      "input_usd_per_token": "0.000001",
+      "output_usd_per_token": "0.000002",
+      "request_usd": "0",
+      "cache_read_usd_per_token": "0.0000005",
+      "all_billable_dimensions_bounded": true,
+      "reasoning_included_in_output": true
+    }
+  ]
+}

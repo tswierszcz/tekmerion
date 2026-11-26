@@ -102,7 +102,7 @@ func TestCheckRejectsUncorrelatedResponses(t *testing.T) {
 		{"revision", `"1.0.0-draft.1"`, `"1.0.0-draft.2"`, 0, "contract_revision"},
 		{"request id", `"request_id": "path-found"`, `"request_id": "other"`, 0, "request_id"},
 		{"analysis id", `"analysis_id": ` + aid, `"analysis_id": "sha256:` + strings.Repeat("0", 64) + `"`, 0, "analysis_id"},
-		{"operation", `"operation": "reachability"`, `"operation": "entries"`, 0, "operation"},
+		{"operation", `"operation": "reachability"`, `"operation": "entries"`, 0, "response schema"},
 		{"target order", `"target_id": "candidate-001"`, `"target_id": "candidate-002"`, 0, "target"},
 		{"exit", "", "", 1, "exit status 1"},
 		{"exit outside contract", "", "", 3, "outside the contract"},
