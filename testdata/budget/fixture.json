@@ -1,0 +1,10 @@
+{
+  "schema_version": "tekmerion-budget-1",
+  "currency": "USD",
+  "limit_usd": "10.000000000",
+  "validation_reserve_usd": "2.000000000",
+  "reporting_reserve_usd": "1.000000000",
+  "max_requests": 100,
+  "max_tokens": 100000,
+  "wall_time_seconds": 3600
+}

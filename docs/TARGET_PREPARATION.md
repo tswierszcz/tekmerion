@@ -57,7 +57,7 @@ The index stays the fallback for an Ariadne without RI4 and for anything Ariadne
 
 | Field | Binds |
 |---|---|
-| `project`, `project_sha256` | The declared input |
+| `project`, `project_original`, `project_sha256` | Readable input, exact original file bytes (base64) and their hash |
 | `source` | Repository, commit, commit time, git tree ids, exported tree hash and file count |
 | `build` | Network policy and enforcement, environment, step environment and step runs |
 | `artifacts` | App, dependency jars and deps list with hashes; classpath and its hash |
@@ -104,3 +104,9 @@ Identities with Ariadne baf3384 (`v0.0.0-20261124123008-baf3384fd63a`) and OpenJ
 - The property-preserving control variant of the plan's TM1 list (needs the file-confinement control target of TM2).
 - A container image as the build environment, and resource limits for steps.
 - Maven/Gradle recipe helpers: a networked dependency resolution is expressible as an `allowed` recipe, but resolution is not yet split into its own recorded stage.
+
+## 6. Reusing preparation for Recon
+
+`prepare.Verify` rechecks source tree/file count, original project bytes and semantic equality to the readable projection, repository/revision, successful build-step identity, artifact/classpath hashes, source-index identity/counts and bundle manifest/identity hashes. `ReadFile` confines bounded regular reads through a directory handle and rejects static symlink members and path escapes. Source collection runs only on this controller-owned prepared snapshot; target execution and hostile worker-output promotion remain separate work.
+
+Recon verifies preparation again after collecting context and independently checks each selected source file against the source index. Selected source bytes are archived under their SHA-256, with exact excerpt ranges. New runs preserve `project_original` because JSON indentation changes the bytes of an embedded `json.RawMessage`; the readable `project` field alone cannot reproduce the original file hash. Legacy preparation has an explicit gap for that original-byte check while source/artifact/index/bundle checks still apply.

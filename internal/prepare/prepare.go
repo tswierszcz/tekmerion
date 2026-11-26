@@ -107,7 +107,7 @@ func Prepare(ctx context.Context, o Options) (*Result, error) {
 		}
 	}
 	run := &manifest.Run{SchemaVersion: manifest.RunSchema, PreparedAt: o.Now().UTC().Truncate(time.Second),
-		Project: append([]byte(nil), o.ProjectRaw...), ProjectSHA256: sha256Hex(o.ProjectRaw)}
+		Project: append([]byte(nil), o.ProjectRaw...), ProjectOriginal: append([]byte(nil), o.ProjectRaw...), ProjectSHA256: sha256Hex(o.ProjectRaw)}
 	res.Run = run
 
 	fmt.Fprintf(o.Stderr, "prepare: exporting %s from %s\n", p.Target.Revision, o.Checkout)

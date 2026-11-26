@@ -1,0 +1,117 @@
+{
+  "schema_version": "tekmerion-estimate-plan-1",
+  "target_identity": "fixture:ariadne-contract-1.0.0-draft.1",
+  "scope": "one file-confinement property; synthetic workload only",
+  "assumptions": [
+    "Hunt candidate yield is unknown; scenario counts are user-supplied assumptions.",
+    "Finite request ceilings include every tool-loop request and corrective retry.",
+    "Token caps include complete prompts and bounded output; reasoning is included in output pricing.",
+    "Build, graph and experiment resources are separate; no compute price is supplied."
+  ],
+  "roles": [
+    {
+      "stage": "recon",
+      "model": "example/model",
+      "provider": "example-provider",
+      "low": {
+        "requests": 1,
+        "input_tokens_per_request": 800,
+        "output_tokens_per_request": 100,
+        "cached_input_tokens_per_request": 0
+      },
+      "base": {
+        "requests": 1,
+        "input_tokens_per_request": 1000,
+        "output_tokens_per_request": 200,
+        "cached_input_tokens_per_request": 0
+      },
+      "high": {
+        "requests": 1,
+        "input_tokens_per_request": 1500,
+        "output_tokens_per_request": 300,
+        "cached_input_tokens_per_request": 0
+      },
+      "max_requests_including_retries": 2,
+      "input_token_limit": 2000,
+      "output_token_limit": 500
+    },
+    {
+      "stage": "hunt",
+      "model": "example/model",
+      "provider": "example-provider",
+      "low": {
+        "requests": 2,
+        "input_tokens_per_request": 1000,
+        "output_tokens_per_request": 100,
+        "cached_input_tokens_per_request": 0
+      },
+      "base": {
+        "requests": 4,
+        "input_tokens_per_request": 2000,
+        "output_tokens_per_request": 300,
+        "cached_input_tokens_per_request": 500
+      },
+      "high": {
+        "requests": 6,
+        "input_tokens_per_request": 3000,
+        "output_tokens_per_request": 600,
+        "cached_input_tokens_per_request": 1000
+      },
+      "max_requests_including_retries": 8,
+      "input_token_limit": 4000,
+      "output_token_limit": 1000
+    },
+    {
+      "stage": "validate",
+      "model": "example/model",
+      "provider": "example-provider",
+      "low": {
+        "requests": 1,
+        "input_tokens_per_request": 1500,
+        "output_tokens_per_request": 200,
+        "cached_input_tokens_per_request": 0
+      },
+      "base": {
+        "requests": 2,
+        "input_tokens_per_request": 2500,
+        "output_tokens_per_request": 500,
+        "cached_input_tokens_per_request": 0
+      },
+      "high": {
+        "requests": 3,
+        "input_tokens_per_request": 3500,
+        "output_tokens_per_request": 1000,
+        "cached_input_tokens_per_request": 0
+      },
+      "max_requests_including_retries": 4,
+      "input_token_limit": 4000,
+      "output_token_limit": 1500
+    },
+    {
+      "stage": "report",
+      "model": "example/model",
+      "provider": "example-provider",
+      "low": {
+        "requests": 1,
+        "input_tokens_per_request": 1000,
+        "output_tokens_per_request": 200,
+        "cached_input_tokens_per_request": 0
+      },
+      "base": {
+        "requests": 1,
+        "input_tokens_per_request": 1500,
+        "output_tokens_per_request": 500,
+        "cached_input_tokens_per_request": 0
+      },
+      "high": {
+        "requests": 1,
+        "input_tokens_per_request": 2000,
+        "output_tokens_per_request": 1000,
+        "cached_input_tokens_per_request": 0
+      },
+      "max_requests_including_retries": 1,
+      "input_token_limit": 2000,
+      "output_token_limit": 1000
+    }
+  ]
+}

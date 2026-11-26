@@ -104,7 +104,7 @@ The validation helper requires Node.js with AJV 8 and `ajv-formats` available to
 node contracts/ariadne/v1/validate.mjs
 ```
 
-The helper validates the schema package, bundle hashes, references and positive/negative examples. Its role is contract-data conformance. Runtime algorithm acceptance is additional work.
+The helper validates the schema package, bundle hashes, references and positive/negative examples. Its role is contract-data conformance. Runtime algorithm acceptance is additional work. The current Tekmerion acceptance run passes this helper (28 cases), all adapter/graph regression tests and real Ariadne full/reachable integration. Shared H0 acceptance for the separately developed producer RH-A0 changes is pending.
 
 ## 9. Adapter
 
@@ -112,7 +112,9 @@ The helper validates the schema package, bundle hashes, references and positive/
 
 - `Index` runs `ariadne research index`. It always passes `-roots` and can pass `-scope reachable`; it refuses to run without roots and checks that the published bundle records the requested roots and scope. Indexing is offline and never overwrites a bundle.
 - `CLI.Query` runs `ariadne research query` against one bundle. Each attempt gets its own evidence directory with `request.json` (the bytes sent), `response.json` (written by Ariadne itself), `stderr.txt` and `attempt.json` (argv, binary hash, exit, outcome, hashes).
-- `Check` accepts a response only when the exit status matches it (0 result, 2 invalid request, 1 bundle/I/O/internal failure) and `schema_version`, `contract_revision`, `request_id`, `analysis_id`, `operation` and the order of reachability targets match the request. A mismatch is recorded as `unusable` and the raw bytes are kept.
+- `Check` validates the complete pinned response schema before decoding its public projection. It rejects duplicate JSON members, missing/unknown fields and unsupported values, then checks exit/correlation, search/model consistency, counts, effective limits, path shape/continuity, node/edge/gap evidence and visible path labels. `total_entry_count` is `*int`: `nil` preserves an unknown count, including a positive witness followed by a search cutoff.
+- Schema validation embeds the pinned schema and supports only its response vocabulary, with no third-party dependencies. This is a bounded contract validator, not a general-purpose JSON Schema library. Unsupported validation keywords fail closed.
+- `CLI.Query` and fixture playback additionally hash-verify the bundle identity and datasets, compare copied records and provenance against the frozen bundle and check matched method selectors and indexed root membership. A mismatch is recorded as `unusable`; raw bytes and diagnostics remain available. Standalone `Check` validates response consistency without authenticating it against a bundle. `attempt.json` records `validation_scope = response` or `bundle` for accepted responses; invalid attempts have no accepted scope. Bundle validation also checks every record's schema and graph relationships: selected class uniqueness/references, exact method ownership, canonical/specialized/synthetic/external nodes, source ranges and edge/root/call/gap references. These checks cover records omitted from the response. Specializations must retain their canonical method identity. Global gap counts are checked against the complete bundle. Raw source-file correspondence is still provided by the separate TM1 source index; bundle graph validation does not turn declared source bindings into build verification.
 - `Fixture` replays the conforming request/response pairs of `cases.json` and marks every result `provenance = fixture`. An unrecorded request is an error.
 - A reachability request holds at most 256 targets. Each query process loads the bundle again, so `Batches` fills batches up to that limit.
 
