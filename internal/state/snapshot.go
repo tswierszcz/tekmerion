@@ -23,6 +23,7 @@ type Snapshot struct {
 	Occurrences     []CandidateOccurrence `json:"candidate_occurrences"`
 	CoverageHistory []CoverageEvent       `json:"coverage_history"`
 	Reproductions   []Reproduction        `json:"reproductions,omitempty"`
+	Decisions       []Decision            `json:"decisions,omitempty"`
 	Schema          string                `json:"schema_version"`
 	Run             Run                   `json:"run"`
 	Tasks           []Task                `json:"tasks"`
@@ -154,6 +155,9 @@ func (s *Store) Snapshot(ctx context.Context) (*Snapshot, error) {
 		return nil, err
 	}
 	if err := readReproductions(ctx, tx, snap); err != nil {
+		return nil, err
+	}
+	if err := readDecisions(ctx, tx, snap); err != nil {
 		return nil, err
 	}
 	snap.Budget, err = readBudget(ctx, tx, snap.Run.ID)

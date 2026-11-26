@@ -32,6 +32,7 @@ import (
 	"github.com/tswierszcz/tekmerion/internal/recon"
 	"github.com/tswierszcz/tekmerion/internal/sourceindex"
 	"github.com/tswierszcz/tekmerion/internal/state"
+	"github.com/tswierszcz/tekmerion/internal/validate"
 )
 
 func main() {
@@ -48,6 +49,8 @@ func main() {
 		err = cmdHunt(ctx, os.Args[2:])
 	case "experiment":
 		err = cmdExperiment(ctx, os.Args[2:])
+	case "validate":
+		err = cmdValidate(ctx, os.Args[2:])
 	case "recon":
 		err = cmdRecon(ctx, os.Args[2:])
 	case "infer":
@@ -69,6 +72,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
+  tekmerion validate -experiment EXPERIMENT_STATE (-print-context | -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE))
   tekmerion experiment -hunt HUNT_STATE -work DIR -spec FILE -candidate ID -state NEW_DIR
   tekmerion hunt -recon RECON_STATE -work DIR -ariadne BIN -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE)
   tekmerion recon -work DIR -ariadne BIN -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE)
@@ -419,6 +423,24 @@ func resumeRun(ctx context.Context, dir string) error {
 		store.Close()
 		return err
 	}
+	if kind.Schema == validate.RunSchema {
+		needsModel := false
+		for _, t := range snap.Tasks {
+			if t.Paid && t.Status != "completed" && t.Status != "failed" {
+				needsModel = true
+			}
+		}
+		store.Close()
+		var provider llm.Provider
+		if needsModel {
+			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+			if err != nil {
+				return err
+			}
+			provider = client
+		}
+		return validate.Resume(ctx, dir, provider)
+	}
 	if kind.Schema == experiment.RunSchema {
 		store.Close()
 		return experiment.Resume(ctx, dir)
@@ -663,6 +685,88 @@ func cmdExperiment(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := experiment.Resume(ctx, *dir); err != nil {
+		return err
+	}
+	return cmdAudit(ctx, "status", []string{"-state", *dir})
+}
+
+func cmdValidate(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	parent := fs.String("experiment", "", "completed experiment state directory")
+	dir := fs.String("state", "", "new derived validation state directory")
+	printContext := fs.Bool("print-context", false, "print the verifier context (with its input_identity) and exit")
+	offline := fs.Bool("offline", false, "no independent review; replay and decision still run")
+	replay := fs.String("replay", "", "recorded tekmerion-validate-result-1 output")
+	model := fs.String("model", "", "tekmerion-validate-model-1 config; explicitly sends source context")
+	prices := fs.String("prices", "", "normalized model pricing snapshot")
+	budget := fs.String("budget", "", "explicit budget for this validation run")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *parent == "" || fs.NArg() != 0 {
+		return fmt.Errorf("validate requires -experiment and no positional arguments")
+	}
+	if *printContext {
+		c, _, err := validate.BuildContext(ctx, *parent)
+		if err != nil {
+			return err
+		}
+		raw, err := json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(raw))
+		return nil
+	}
+	if *dir == "" {
+		return fmt.Errorf("validate requires -state NEW_DIR")
+	}
+	o := validate.Options{Experiment: *parent, State: *dir, Offline: *offline}
+	if *replay != "" {
+		raw, err := os.ReadFile(*replay)
+		if err != nil {
+			return err
+		}
+		o.Replay = raw
+	}
+	if *budget != "" {
+		raw, err := os.ReadFile(*budget)
+		if err != nil {
+			return err
+		}
+		v, err := state.ParseBudget(raw)
+		if err != nil {
+			return err
+		}
+		o.Budget = &v
+	}
+	var provider llm.Provider
+	if *model != "" {
+		raw, err := os.ReadFile(*model)
+		if err != nil {
+			return err
+		}
+		var config validate.Config
+		if err := jsonx.Decode(raw, &config, false); err != nil {
+			return err
+		}
+		o.Model = &config
+		if *prices == "" {
+			return fmt.Errorf("model validation requires -prices")
+		}
+		if o.Prices, err = os.ReadFile(*prices); err != nil {
+			return err
+		}
+		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+		if err != nil {
+			return err
+		}
+		provider = client
+	}
+	if err := validate.Start(ctx, o); err != nil {
+		return err
+	}
+	if err := validate.Resume(ctx, *dir, provider); err != nil {
 		return err
 	}
 	return cmdAudit(ctx, "status", []string{"-state", *dir})

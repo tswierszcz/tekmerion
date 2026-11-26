@@ -14,6 +14,7 @@ import (
 	"github.com/tswierszcz/tekmerion/internal/pricing"
 	"github.com/tswierszcz/tekmerion/internal/recon"
 	"github.com/tswierszcz/tekmerion/internal/state"
+	"github.com/tswierszcz/tekmerion/internal/validate"
 )
 
 func Status(ctx context.Context, dir string) (*state.Snapshot, error) {
@@ -56,7 +57,8 @@ func Report(ctx context.Context, dir, format string) ([]byte, error) {
 	isRecon := m.Schema == recon.RunSchema && (m.Mode == "recon-offline" || m.Mode == "recon-replay" || m.Mode == "recon-model")
 	isHunt := m.Schema == hunt.RunSchema && (m.Mode == "hunt-offline" || m.Mode == "hunt-replay" || m.Mode == "hunt-model")
 	isExperiment := m.Schema == experiment.RunSchema && m.Mode == "checked-in-harness"
-	if !fixture && !model && !isRecon && !isHunt && !isExperiment {
+	isValidate := m.Schema == validate.RunSchema && (m.Mode == "validate-offline" || m.Mode == "validate-replay" || m.Mode == "validate-model")
+	if !fixture && !model && !isRecon && !isHunt && !isExperiment && !isValidate {
 		return nil, fmt.Errorf("unsupported report manifest")
 	}
 	if format == "json" {
@@ -67,6 +69,13 @@ func Report(ctx context.Context, dir, format string) ([]byte, error) {
 	if fixture {
 		fmt.Fprintf(&b, "# Tekmerion fixture ledger\n\nRun: `%s`\n\nStatus: **%s**\n\n", snap.Run.ID, snap.Run.Status)
 		b.WriteString("Provenance: **fixture**. This run replays static contract examples; it does not investigate a real library or establish vulnerabilities. Paid model requests: **0**.\n\n")
+	} else if isValidate {
+		fmt.Fprintf(&b, "# Tekmerion validation ledger\n\nRun: `%s`\n\nStatus: **%s**\n\nMode: **%s**.\n\n", snap.Run.ID, snap.Run.Status, m.Mode)
+		details, err := validate.Report(ctx, s, snap)
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString(details)
 	} else if isExperiment {
 		fmt.Fprintf(&b, "# Tekmerion experiment ledger\n\nRun: `%s`\n\nStatus: **%s**\n\nMode: **%s**. Paid model requests: **0**.\n\n", snap.Run.ID, snap.Run.Status, m.Mode)
 		details, err := experiment.Report(ctx, s, snap)
