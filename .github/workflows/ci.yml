@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # The module minimum from go.mod and the current stable release.
+        go: ["1.24.x", "stable"]
+    env:
+      CGO_ENABLED: "1" # github.com/mattn/go-sqlite3 needs cgo and a C compiler
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+      # Real Ariadne and sandbox integration tests skip themselves here: the
+      # runner has no ARIADNE_SRC, bubblewrap or systemd user manager. Run them
+      # locally with ARIADNE_SRC=/path/to/ariadne go test -race ./...
+      - name: go test
+        run: go test -race -count=1 ./...

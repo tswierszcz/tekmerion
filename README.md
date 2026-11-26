@@ -1,6 +1,9 @@
 <p align="center">
   <img src="docs/logo.png" alt="Tekmerion" width="520">
 </p>
+<p align="center">
+  <a href="https://github.com/tswierszcz/tekmerion/actions/workflows/ci.yml"><img src="https://github.com/tswierszcz/tekmerion/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+</p>
 
 # Tekmerion
 
@@ -28,7 +31,7 @@ Planned research inputs include a supplied JVM binary, pinned source and an opti
 
 The local fixture workflow now persists one run per state directory in SQLite, with immutable hash-addressed evidence, exclusive task leases and append-only attempt/result history. It exercises nine pinned Ariadne contract pairs. It is a static integration fixture, not an audit of a real target or an LLM research workflow.
 
-Builds now require `CGO_ENABLED=1` and a C compiler. The pinned SQLite driver is [`github.com/mattn/go-sqlite3 v1.14.32`](https://github.com/mattn/go-sqlite3/tree/v1.14.32); its [build requirements and connection options](https://github.com/mattn/go-sqlite3/blob/v1.14.32/README.md#installation) were checked before selection. The repository retains Go 1.24 as its module minimum.
+Builds now require `CGO_ENABLED=1` and a C compiler. [CI](.github/workflows/ci.yml) runs gofmt, vet, build and `go test -race` on the go.mod minimum and current stable Go; the real Ariadne and sandbox integration tests skip there and run locally with `ARIADNE_SRC` set. The pinned SQLite driver is [`github.com/mattn/go-sqlite3 v1.14.32`](https://github.com/mattn/go-sqlite3/tree/v1.14.32); its [build requirements and connection options](https://github.com/mattn/go-sqlite3/blob/v1.14.32/README.md#installation) were checked before selection. The repository retains Go 1.24 as its module minimum.
 
 Run from the repository root; the state directory must not already exist:
 
