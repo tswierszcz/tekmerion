@@ -108,13 +108,7 @@ func BuildContext(ctx context.Context, dir string) (Context, *state.Snapshot, er
 		if i == 0 {
 			c.Repository, c.RootCause, c.Anchor, c.Declarations = hc.Repository, h.RootCause, h.Anchor, hc.Declarations
 		}
-		p := "o" + strconv.Itoa(i+1) + "."
-		fact := func(f recon.Fact) string { return f.Text + " (origin: " + f.Origin + ")" }
-		c.Claims = append(c.Claims, Claim{ID: p + "principal", Text: fact(h.Principal)}, Claim{ID: p + "resource", Text: fact(h.Resource)}, Claim{ID: p + "controlled_input", Text: fact(h.ControlledInput)})
-		for k, f := range h.Conditions {
-			c.Claims = append(c.Claims, Claim{ID: p + "condition-" + strconv.Itoa(k+1), Text: fact(f)})
-		}
-		c.Claims = append(c.Claims, Claim{ID: p + "mechanism", Text: h.Invariant + " — " + h.Mechanism + " (" + h.MechanismKey + ")"}, Claim{ID: p + "effect", Text: h.Prediction})
+		c.Claims = append(c.Claims, ClaimsFor(i, h)...)
 		st := Static{Entry: hc.Entry.Method.Class + "#" + hc.Entry.Method.Name + hc.Entry.Method.Descriptor, Execution: o.Static.Execution}
 		if len(o.Static.Result) > 0 {
 			var axes struct {
@@ -499,4 +493,66 @@ func Resume(ctx context.Context, dir string, provider llm.Provider) error {
 		return err
 	}
 	return s.CommitDecision(ctx, *claim, sha, state.Decision{TaskID: "decide", CandidateID: d.CandidateID, Label: d.Label, Verifier: d.Verifier, Rules: d.Rules, Reason: d.Reason, PayloadSHA: sha})
+}
+
+// ClaimsFor splits occurrence i's hypothesis into the claim ids a verifier
+// must assess: principal, resource, controlled input, each condition,
+// mechanism and effect.
+func ClaimsFor(i int, h hunt.Candidate) []Claim {
+	p := "o" + strconv.Itoa(i+1) + "."
+	fact := func(f recon.Fact) string { return f.Text + " (origin: " + f.Origin + ")" }
+	out := []Claim{{ID: p + "principal", Text: fact(h.Principal)}, {ID: p + "resource", Text: fact(h.Resource)}, {ID: p + "controlled_input", Text: fact(h.ControlledInput)}}
+	for k, f := range h.Conditions {
+		out = append(out, Claim{ID: p + "condition-" + strconv.Itoa(k+1), Text: fact(f)})
+	}
+	return append(out, Claim{ID: p + "mechanism", Text: h.Invariant + " — " + h.Mechanism + " (" + h.MechanismKey + ")"}, Claim{ID: p + "effect", Text: h.Prediction})
+}
+
+// Summary is the saved outcome of one validation run.
+type Summary struct {
+	Manifest    Manifest
+	Context     Context
+	Output      *Output
+	OutputSHA   string
+	Decision    *Decision
+	DecisionSHA string
+	Replay      *experiment.ReplayResult
+	ReplaySHA   string
+}
+
+// Summarize reads a validation run's saved results; missing parts stay nil.
+func Summarize(ctx context.Context, s *state.Store) (*state.Snapshot, *Summary, error) {
+	snap, m, c, err := load(ctx, s)
+	if err != nil {
+		return nil, nil, err
+	}
+	r := &Summary{Manifest: m, Context: c}
+	if sha, ok := experiment.Completed(snap, "replay"); ok {
+		r.Replay, r.ReplaySHA = &experiment.ReplayResult{}, sha
+		if err := decode(ctx, s, sha, r.Replay); err != nil {
+			return nil, nil, err
+		}
+	}
+	if sha, ok := experiment.Completed(snap, "validate"); ok {
+		vt, err := task(snap, "validate")
+		if err != nil {
+			return nil, nil, err
+		}
+		raw, outSHA, err := verifierRaw(ctx, s, vt, sha)
+		if err != nil {
+			return nil, nil, err
+		}
+		o, err := ParseOutput(raw, c)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.Output, r.OutputSHA = &o, outSHA
+	}
+	if len(snap.Decisions) == 1 {
+		r.Decision, r.DecisionSHA = &Decision{}, snap.Decisions[0].PayloadSHA
+		if err := decode(ctx, s, r.DecisionSHA, r.Decision); err != nil {
+			return nil, nil, err
+		}
+	}
+	return snap, r, nil
 }
