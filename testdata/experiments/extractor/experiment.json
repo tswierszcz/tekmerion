@@ -1,0 +1,20 @@
+{
+  "schema_version": "tekmerion-experiment-1",
+  "property": "file-confinement-1",
+  "harness_name": "ExtractHarness.java",
+  "harness": "ExtractHarness.java",
+  "heap_mb": 64,
+  "limits": {
+    "wall_seconds": 60,
+    "cpu_seconds": 30,
+    "memory_bytes": 536870912,
+    "tasks": 64,
+    "file_size_bytes": 1048576,
+    "open_files": 256,
+    "output_bytes": 65536
+  },
+  "cases": [
+    {"id": "normal", "role": "normal", "description": "Plain entry name; the file is expected inside the confinement directory.", "args": ["entry.txt", "benign"]},
+    {"id": "traversal", "role": "candidate", "description": "Entry name with one parent component, as predicted by the candidate.", "args": ["../escaped.txt", "payload"]}
+  ]
+}

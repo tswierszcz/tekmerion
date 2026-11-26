@@ -20,6 +20,7 @@ import (
 
 	"github.com/tswierszcz/tekmerion/internal/ariadne"
 	"github.com/tswierszcz/tekmerion/internal/audit"
+	"github.com/tswierszcz/tekmerion/internal/experiment"
 	"github.com/tswierszcz/tekmerion/internal/gateway"
 	"github.com/tswierszcz/tekmerion/internal/hunt"
 	"github.com/tswierszcz/tekmerion/internal/jsonx"
@@ -45,6 +46,8 @@ func main() {
 		err = cmdAudit(ctx, os.Args[1], os.Args[2:])
 	case "hunt":
 		err = cmdHunt(ctx, os.Args[2:])
+	case "experiment":
+		err = cmdExperiment(ctx, os.Args[2:])
 	case "recon":
 		err = cmdRecon(ctx, os.Args[2:])
 	case "infer":
@@ -66,6 +69,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
+  tekmerion experiment -hunt HUNT_STATE -work DIR -spec FILE -candidate ID -state NEW_DIR
   tekmerion hunt -recon RECON_STATE -work DIR -ariadne BIN -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE)
   tekmerion recon -work DIR -ariadne BIN -state NEW_DIR (-offline | -replay FILE | -model FILE -prices FILE -budget FILE)
   tekmerion infer -request FILE -prices FILE -budget FILE -state NEW_DIR [-attempts N] [-timeout-seconds N]
@@ -415,6 +419,10 @@ func resumeRun(ctx context.Context, dir string) error {
 		store.Close()
 		return err
 	}
+	if kind.Schema == experiment.RunSchema {
+		store.Close()
+		return experiment.Resume(ctx, dir)
+	}
 	if kind.Schema == hunt.RunSchema {
 		needsModel := false
 		for _, t := range snap.Tasks {
@@ -633,6 +641,28 @@ func cmdHunt(ctx context.Context, args []string) error {
 		return err
 	}
 	if err := hunt.Resume(ctx, *dir, provider, nil); err != nil {
+		return err
+	}
+	return cmdAudit(ctx, "status", []string{"-state", *dir})
+}
+
+func cmdExperiment(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("experiment", flag.ContinueOnError)
+	parent := fs.String("hunt", "", "completed Hunt state directory")
+	work := fs.String("work", "", "same prepared input used by Hunt")
+	spec := fs.String("spec", "", "tekmerion-experiment-1 spec with a checked-in harness")
+	candidate := fs.String("candidate", "", "candidate ID from the Hunt run")
+	dir := fs.String("state", "", "new derived experiment state directory")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("experiment takes no positional arguments")
+	}
+	if err := experiment.Start(ctx, experiment.Options{Hunt: *parent, Work: *work, Spec: *spec, Candidate: *candidate, State: *dir}); err != nil {
+		return err
+	}
+	if err := experiment.Resume(ctx, *dir); err != nil {
 		return err
 	}
 	return cmdAudit(ctx, "status", []string{"-state", *dir})

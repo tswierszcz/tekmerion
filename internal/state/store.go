@@ -33,6 +33,9 @@ var coverageSchema string
 //go:embed hunt.sql
 var huntSchema string
 
+//go:embed experiment.sql
+var experimentSchema string
+
 var (
 	ErrBusy     = errors.New("task has an active lease")
 	ErrLease    = errors.New("task lease is stale or expired")
@@ -40,7 +43,7 @@ var (
 	ErrConflict = errors.New("conflicting result delivery")
 )
 
-const SchemaVersion = "tekmerion-state-5"
+const SchemaVersion = "tekmerion-state-6"
 
 type Store struct {
 	db  *sql.DB
@@ -125,8 +128,14 @@ func open(ctx context.Context, dir string, initialize bool) (*Store, error) {
 		}
 		version = 5
 	}
-	if version != 5 {
-		return fail(fmt.Errorf("state schema %d unsupported (want 5)", version))
+	if version == 5 {
+		if _, err := tx.ExecContext(ctx, experimentSchema); err != nil {
+			return fail(err)
+		}
+		version = 6
+	}
+	if version != 6 {
+		return fail(fmt.Errorf("state schema %d unsupported (want 6)", version))
 	}
 	if err := tx.Commit(); err != nil {
 		return fail(err)
