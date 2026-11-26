@@ -736,3 +736,56 @@ func correction(ctx context.Context, s *state.Store, dir string, snap *state.Sna
 	}
 	return &rec, nil
 }
+
+const ReplaySchema = "tekmerion-replay-1"
+
+// ReplayResult is a fresh-worker rerun of every case of a saved experiment.
+type ReplayResult struct {
+	Schema          string        `json:"schema_version"`
+	CapabilitiesSHA string        `json:"capabilities_sha256"`
+	Assessment      Assessment    `json:"assessment"`
+	Cases           []CaseSummary `json:"cases"`
+}
+
+// Replay probes the sandbox again and reruns every case in fresh workers and
+// fresh scratch directories under dir, saving evidence in s. s must hold the
+// experiment's spec, harness and patch artifacts (a derived run copies them).
+// The original experiment's observations are never read.
+func Replay(ctx context.Context, s *state.Store, dir string, m Manifest, spec Spec, variant *VariantRecord, prefix string, attempt int) (*ReplayResult, error) {
+	scratch := filepath.Join(dir, "scratch")
+	if err := os.MkdirAll(scratch, 0700); err != nil {
+		return nil, err
+	}
+	caps, err := sandbox.Probe(ctx, spec.Limits, filepath.Join(scratch, fmt.Sprintf("%s-capabilities-%d", prefix, attempt)))
+	if err != nil {
+		return nil, err
+	}
+	r := &ReplayResult{Schema: ReplaySchema, Cases: []CaseSummary{}}
+	if r.CapabilitiesSHA, err = put(ctx, s, caps); err != nil {
+		return nil, err
+	}
+	a := Assessment{Schema: AssessSchema, CandidateID: m.CandidateID, CapabilitiesSHA: r.CapabilitiesSHA, Defect: "candidate", Novelty: "undetermined", Cases: []CaseSummary{}}
+	for _, c := range spec.Cases {
+		claim := state.Claim{TaskID: prefix + "-" + c.ID, Number: attempt}
+		o, err := runCase(ctx, s, dir, m, spec, *caps, variant, c, claim)
+		if err != nil {
+			return nil, err
+		}
+		sha, err := put(ctx, s, o)
+		if err != nil {
+			return nil, err
+		}
+		a.Cases = append(a.Cases, CaseSummary{TaskID: claim.TaskID, CaseID: c.ID, Role: c.Role, Variant: c.VariantName(), Outcome: o.Outcome, Assertion: o.Assertion, ObservationSHA: sha})
+	}
+	assess(&a)
+	r.Assessment, r.Cases = a, a.Cases
+	return r, nil
+}
+
+// Load reads a saved experiment run's snapshot, manifest and spec.
+func Load(ctx context.Context, s *state.Store) (*state.Snapshot, Manifest, Spec, error) {
+	return load(ctx, s)
+}
+
+// Completed returns the accepted result artifact of a task.
+func Completed(snap *state.Snapshot, id string) (string, bool) { return completed(snap, id) }

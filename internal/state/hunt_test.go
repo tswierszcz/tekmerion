@@ -131,7 +131,7 @@ func TestVersionFourMigrationPreservesCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Remove only empty v5/v6 additions to recreate the previous persisted schema.
-	for _, table := range []string{"reproductions", "candidate_occurrences", "coverage_events", "candidates", "hunt_batches"} {
+	for _, table := range []string{"decisions", "reproductions", "candidate_occurrences", "coverage_events", "candidates", "hunt_batches"} {
 		if _, err := s.db.Exec("DROP TABLE " + table); err != nil {
 			t.Fatal(err)
 		}

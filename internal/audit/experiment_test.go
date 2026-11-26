@@ -10,6 +10,7 @@ import (
 
 	"github.com/tswierszcz/tekmerion/internal/experiment"
 	"github.com/tswierszcz/tekmerion/internal/state"
+	"github.com/tswierszcz/tekmerion/internal/validate"
 )
 
 // An experiment ledger is reported from saved state alone, before any task runs.
@@ -44,6 +45,39 @@ func TestExperimentLedgerReportDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"# Tekmerion experiment ledger", "Paid model requests: **0**", "| case-normal | | | not run |", "Not assessed yet."} {
+		if !strings.Contains(string(report), want) {
+			t.Errorf("report lacks %q:\n%s", want, report)
+		}
+	}
+}
+
+// A validation ledger is reported from saved state before any task runs.
+func TestValidationLedgerReportDispatch(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "run")
+	s, err := state.Create(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put := func(v any) string {
+		raw, _ := json.Marshal(v)
+		a, err := s.Put(ctx, raw, "application/json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a.SHA
+	}
+	c := validate.Context{Schema: validate.ContextSchema, CandidateID: "sha256:c", Canonical: "exact cause", Gaps: []string{"bounded"}}
+	m := validate.Manifest{Schema: validate.RunSchema, Mode: "validate-offline", ParentSHA: put(map[string]string{}), ParentRunID: "run-parent", CandidateID: "sha256:c", ContextSHA: put(c), PromptSHA: put("p"), InstructionsSHA: put("i"), Rules: validate.Rules}
+	if _, err := s.Start(ctx, put(m), []state.TaskInput{{ID: "validate", Stage: "validate", InputSHA: m.ContextSHA}, {ID: "decide", Stage: "decision", InputSHA: m.ContextSHA}}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	report, err := Report(ctx, dir, "markdown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# Tekmerion validation ledger", "Mode: **validate-offline**", "Not decided yet."} {
 		if !strings.Contains(string(report), want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}

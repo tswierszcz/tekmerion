@@ -1,0 +1,10 @@
+{
+  "schema_version": "tekmerion-validate-model-1",
+  "model": "example/model",
+  "provider": "example-provider",
+  "input_token_bound": 131072,
+  "max_output_tokens": 8192,
+  "max_attempts": 2,
+  "timeout_seconds": 30,
+  "allow_source_context": true
+}

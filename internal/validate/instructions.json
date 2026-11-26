@@ -1,0 +1,11 @@
+{
+  "schema_version": "tekmerion-instruction-provenance-1",
+  "prompt_revision": "validate-1",
+  "rules_revision": "tekmerion-decision-rules-1",
+  "instruction_sources": [{
+    "repository": "https://github.com/cloudflare/security-audit-skill",
+    "revision": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+    "blocks": ["skills/security-audit/VALIDATION-AND-REPORTING.md#Phase 3: Independently validate every candidate", "skills/security-audit/VALIDATION-AND-REPORTING.md#Candidate-verifier prompt", "skills/security-audit/VALIDATION-AND-REPORTING.md#Phase 5: Verify the final records with fresh eyes"],
+    "adaptation": "Original Tekmerion wording. Adopted concepts: a fresh verifier that did not propose the candidate tries to refute it, re-reads cited source, reconstructs the strongest controls, never receives another verifier's conclusion, cannot change the root cause or originate a new finding, and keeps a decisive missing fact as an exact unresolved blocker. Not adopted: upstream labels chosen by the verifier, severity/likelihood fields, deployment validation plans and agent orchestration. Tekmerion's verifier returns per-claim assessments; confirmed/needs_validation/rejected labels are derived by versioned deterministic rules from the verifier decision, the recorded reproduction and a fresh-worker replay."
+  }]
+}
