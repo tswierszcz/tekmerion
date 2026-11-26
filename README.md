@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Tekmerion" width="520">
+</p>
+
 # Tekmerion
 
 LLM-assisted vulnerability research for open-source JVM libraries. Combines Ariadne's reachability analysis with static analysis and targeted testing to generate hypotheses, investigate attack paths, and produce reproducible evidence of security flaws.
