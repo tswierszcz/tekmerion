@@ -1,0 +1,17 @@
+diff --git a/testdata/research/lib/fx/research/Extractor.java b/testdata/research/lib/fx/research/Extractor.java
+index 9a1c1e3..8d88117 100644
+--- a/testdata/research/lib/fx/research/Extractor.java
++++ b/testdata/research/lib/fx/research/Extractor.java
+@@ -12,7 +12,11 @@ public class Extractor {
+     public void extract(InputStream in, Path dir) throws IOException {
+         String name = new String(in.readNBytes(in.read()), "UTF-8");
+         byte[] body = in.readAllBytes();
+-        writeEntry(Paths2.resolve(dir, name), body);
++        Path target = Paths2.resolve(dir, name).normalize();
++        if (!target.startsWith(dir.normalize())) {
++            throw new IOException("entry outside the target directory: " + name);
++        }
++        writeEntry(target, body);
+     }
+ 
+     /** Case (b) target: private, called only from extract. */

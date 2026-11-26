@@ -101,7 +101,7 @@ Identities with Ariadne baf3384 (`v0.0.0-20261124123008-baf3384fd63a`) and OpenJ
 
 ## 6. Not in this increment
 
-- The property-preserving control variant of the plan's TM1 list (needs the file-confinement control target of TM2).
+- The property-preserving control variant of the plan's TM1 list. RH-T4 now builds a corrected variant from an experiment's correction patch with `prepare.BuildVariant` (same recipe, separate directory); a standalone variant target is still not part of preparation.
 - A container image as the build environment, and resource limits for steps.
 - Maven/Gradle recipe helpers: a networked dependency resolution is expressible as an `allowed` recipe, but resolution is not yet split into its own recorded stage.
 

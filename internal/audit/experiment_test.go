@@ -43,7 +43,7 @@ func TestExperimentLedgerReportDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"# Tekmerion experiment ledger", "Paid model requests: **0**", "| case-normal | | not run |", "Not assessed yet."} {
+	for _, want := range []string{"# Tekmerion experiment ledger", "Paid model requests: **0**", "| case-normal | | | not run |", "Not assessed yet."} {
 		if !strings.Contains(string(report), want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}

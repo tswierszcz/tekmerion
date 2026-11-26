@@ -42,11 +42,35 @@ func Report(ctx context.Context, s *state.Store, snap *state.Snapshot) (string, 
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("## Cases\n\n| Case | Role | Outcome | Assertion | Outside confinement | Reason | Evidence |\n|---|---|---|---|---|---|---|\n")
+	if m.PatchSHA != "" {
+		fmt.Fprintf(&b, "## Corrected variant\n\n[Correction patch](%s), applied to a separate copy of the same revision and built with the project recipe.\n\n", link(m.PatchSHA))
+		if sha, ok := completed(snap, "correction"); ok {
+			var rec VariantRecord
+			if err := decode(ctx, s, sha, &rec); err != nil {
+				return "", err
+			}
+			if rec.Variant == nil {
+				fmt.Fprintf(&b, "Not available: %s. [Record](%s).\n\n", cell(rec.Error), link(sha))
+			} else {
+				fmt.Fprintf(&b, "Corrected tree `%s` (base `%s`); app `%s`; classpath `%s`. [Record](%s).\n\n| Changed file | Before | After |\n|---|---|---|\n", rec.Variant.TreeSHA256, rec.Variant.BaseTreeSHA256, rec.Variant.Artifacts.App.SHA256, rec.Variant.Artifacts.ClasspathSHA256, link(sha))
+				for _, f := range rec.Variant.Changed {
+					after := f.After
+					if a, ok := rec.Sources[f.Path]; ok {
+						after = fmt.Sprintf("[%s](%s)", a, link(a))
+					}
+					fmt.Fprintf(&b, "| %s | %s | %s |\n", cell(f.Path), cell(f.Before), after)
+				}
+				b.WriteString("\n")
+			}
+		} else {
+			b.WriteString("Not built yet.\n\n")
+		}
+	}
+	b.WriteString("## Cases\n\n| Case | Role | Variant | Outcome | Assertion | Outside confinement | Reason | Evidence |\n|---|---|---|---|---|---|---|---|\n")
 	for _, job := range m.Cases {
 		sha, ok := completed(snap, job.TaskID)
 		if !ok {
-			fmt.Fprintf(&b, "| %s | | not run | | | | |\n", job.TaskID)
+			fmt.Fprintf(&b, "| %s | | | not run | | | | |\n", job.TaskID)
 			continue
 		}
 		var o Observation
@@ -57,7 +81,7 @@ func Report(ctx context.Context, s *state.Store, snap *state.Snapshot) (string, 
 		if o.SandboxSHA != "" {
 			evidence += fmt.Sprintf(", [worker](%s)", link(o.SandboxSHA))
 		}
-		fmt.Fprintf(&b, "| %s | %s | **%s** | %s | %s | %s | %s |\n", o.Case.ID, o.Case.Role, o.Outcome, o.Assertion, cell(strings.Join(o.Escapes, ", ")), cell(o.Reason), evidence)
+		fmt.Fprintf(&b, "| %s | %s | %s | **%s** | %s | %s | %s | %s |\n", o.Case.ID, o.Case.Role, o.Case.VariantName(), o.Outcome, o.Assertion, cell(strings.Join(o.Escapes, ", ")), cell(o.Reason), evidence)
 	}
 	b.WriteString("\n## Reproduction\n\n")
 	if len(snap.Reproductions) == 0 {

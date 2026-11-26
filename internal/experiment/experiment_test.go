@@ -24,13 +24,16 @@ func TestSpecValidation(t *testing.T) {
 			s.Cases = s.Cases[:1]
 			s.Cases = append(s.Cases, Case{ID: "n2", Role: "normal", Description: "x"})
 		},
-		"duplicate case": func(s *Spec) { s.Cases[1].ID = s.Cases[0].ID },
-		"unknown role":   func(s *Spec) { s.Cases[0].Role = "exploit" },
-		"bad harness":    func(s *Spec) { s.HarnessName = "../x.java" },
-		"heap too big":   func(s *Spec) { s.HeapMB = 4096 },
-		"zero limit":     func(s *Spec) { s.Limits.Tasks = 0 },
-		"NUL argument":   func(s *Spec) { s.Cases[0].Args = []string{"a\x00b"} },
-		"property":       func(s *Spec) { s.Property = "rce" },
+		"duplicate case":      func(s *Spec) { s.Cases[1].ID = s.Cases[0].ID },
+		"unknown role":        func(s *Spec) { s.Cases[0].Role = "exploit" },
+		"bad harness":         func(s *Spec) { s.HarnessName = "../x.java" },
+		"heap too big":        func(s *Spec) { s.HeapMB = 4096 },
+		"zero limit":          func(s *Spec) { s.Limits.Tasks = 0 },
+		"NUL argument":        func(s *Spec) { s.Cases[0].Args = []string{"a\x00b"} },
+		"property":            func(s *Spec) { s.Property = "rce" },
+		"no correction":       func(s *Spec) { s.Correction = nil },
+		"bad variant":         func(s *Spec) { s.Cases[2].Variant = "patched" },
+		"corrected candidate": func(s *Spec) { s.Cases[1].Variant = Corrected },
 	} {
 		s := good
 		s.Cases = append([]Case{}, good.Cases...)
@@ -140,6 +143,7 @@ func TestClassifyAndAssess(t *testing.T) {
 	n := func(outcome string) CaseSummary { return CaseSummary{CaseID: "n", Role: "normal", Outcome: outcome} }
 	c := func(outcome string) CaseSummary { return CaseSummary{CaseID: "c", Role: "candidate", Outcome: outcome} }
 	k := func(outcome string) CaseSummary { return CaseSummary{CaseID: "k", Role: "control", Outcome: outcome} }
+	rejected := CaseSummary{CaseID: "k", Role: "control", Variant: Corrected, Outcome: "target_exception", Assertion: "held"}
 	for _, v := range []struct {
 		a    Assessment
 		want string
@@ -147,6 +151,9 @@ func TestClassifyAndAssess(t *testing.T) {
 		{run(n("property_held"), c("property_violated")), "reproduced"},
 		{run(n("property_held"), c("property_violated"), k("property_held")), "reproduced"},
 		{run(n("property_held"), c("property_violated"), k("property_violated")), "inconclusive"},
+		{run(n("property_held"), c("property_violated"), rejected), "reproduced"},
+		{run(n("property_held"), c("property_violated"), k("variant_unavailable")), "inconclusive"},
+		{run(n("target_exception"), c("property_violated")), "inconclusive"},
 		{run(n("property_violated"), c("property_violated")), "inconclusive"},
 		{run(n("property_held"), c("property_held")), "not_reproduced"},
 		{run(n("property_held"), c("target_exception")), "inconclusive"},
@@ -160,5 +167,8 @@ func TestClassifyAndAssess(t *testing.T) {
 	}
 	if a := run(n("property_held"), c("property_violated")); !strings.Contains(strings.Join(a.Gaps, "\n"), "no property-preserving control") {
 		t.Error("missing control gap not recorded")
+	}
+	if a := run(n("property_held"), c("property_violated"), rejected); !strings.Contains(strings.Join(a.Gaps, "\n"), "operator-supplied patch") || strings.Contains(strings.Join(a.Gaps, "\n"), "no property-preserving control") {
+		t.Errorf("corrected control gaps: %v", a.Gaps)
 	}
 }
