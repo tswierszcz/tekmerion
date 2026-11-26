@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/tswierszcz/tekmerion/internal/hunt"
 	"github.com/tswierszcz/tekmerion/internal/jsonx"
+	"github.com/tswierszcz/tekmerion/internal/manifest"
 	"github.com/tswierszcz/tekmerion/internal/prepare"
 	"github.com/tswierszcz/tekmerion/internal/sandbox"
 	"github.com/tswierszcz/tekmerion/internal/state"
@@ -42,6 +44,7 @@ type Manifest struct {
 	SpecSHA            string    `json:"spec_sha256"`
 	HarnessSHA         string    `json:"harness_sha256"`
 	HarnessName        string    `json:"harness_name"`
+	PatchSHA           string    `json:"patch_sha256,omitempty"`
 	Classpath          []string  `json:"classpath"`
 	Cases              []CaseJob `json:"cases"`
 }
@@ -176,6 +179,24 @@ func Start(ctx context.Context, o Options) error {
 	}
 	m.HarnessSHA = a.SHA
 	tasks := []state.TaskInput{{ID: "capabilities", Stage: "experiment-setup", InputSHA: m.SpecSHA}}
+	if spec.Correction != nil {
+		patchPath := spec.Correction.Patch
+		if !filepath.IsAbs(patchPath) {
+			patchPath = filepath.Join(filepath.Dir(o.Spec), patchPath)
+		}
+		patch, err := os.ReadFile(patchPath)
+		if err != nil {
+			return err
+		}
+		if len(patch) == 0 || len(patch) > 256<<10 || !utf8.Valid(patch) {
+			return fmt.Errorf("correction patch must be non-empty UTF-8 of at most 256 KiB")
+		}
+		if a, err = s.Put(ctx, patch, "text/x-diff"); err != nil {
+			return err
+		}
+		m.PatchSHA = a.SHA
+		tasks = append(tasks, state.TaskInput{ID: "correction", Stage: "experiment-setup", InputSHA: m.PatchSHA})
+	}
 	for _, c := range spec.Cases {
 		sha, err := put(ctx, s, c)
 		if err != nil {
@@ -307,6 +328,15 @@ func Resume(ctx context.Context, dir string) error {
 	if err := decode(ctx, s, capsSHA, &caps); err != nil {
 		return err
 	}
+	var variant *VariantRecord
+	if m.PatchSHA != "" {
+		if variant, err = correction(ctx, s, dir, snap, m, caps); err != nil {
+			return err
+		}
+		if snap, err = s.Snapshot(ctx); err != nil {
+			return err
+		}
+	}
 	for _, job := range m.Cases {
 		t, err := task(snap, job.TaskID)
 		if err != nil {
@@ -326,7 +356,7 @@ func Resume(ctx context.Context, dir string) error {
 		if err != nil {
 			return err
 		}
-		obs, err := runCase(ctx, s, dir, m, spec, caps, c, *claim)
+		obs, err := runCase(ctx, s, dir, m, spec, caps, variant, c, *claim)
 		if err != nil {
 			return finishErr(s, *claim, err)
 		}
@@ -354,7 +384,7 @@ func Resume(ctx context.Context, dir string) error {
 		if err := decode(ctx, s, sha, &o); err != nil {
 			return err
 		}
-		a.Cases = append(a.Cases, CaseSummary{TaskID: job.TaskID, CaseID: o.Case.ID, Role: o.Case.Role, Outcome: o.Outcome, Assertion: o.Assertion, ObservationSHA: sha})
+		a.Cases = append(a.Cases, CaseSummary{TaskID: job.TaskID, CaseID: o.Case.ID, Role: o.Case.Role, Variant: o.Case.VariantName(), Outcome: o.Outcome, Assertion: o.Assertion, ObservationSHA: sha})
 	}
 	assess(&a)
 	claim, err := s.Claim(ctx, snap.Run.ID, "assess", worker(), time.Minute)
@@ -389,7 +419,7 @@ func preparedSHA(work string) (string, error) {
 	return hash(v.RawManifest), nil
 }
 
-func runCase(ctx context.Context, s *state.Store, dir string, m Manifest, spec Spec, caps sandbox.Capabilities, c Case, claim state.Claim) (Observation, error) {
+func runCase(ctx context.Context, s *state.Store, dir string, m Manifest, spec Spec, caps sandbox.Capabilities, variant *VariantRecord, c Case, claim state.Claim) (Observation, error) {
 	o := Observation{Schema: CaseSchema, TaskID: claim.TaskID, Attempt: claim.Number, Case: c, Assertion: "not_evaluated", Escapes: []string{}}
 	if !caps.OK {
 		failed := []string{}
@@ -410,6 +440,24 @@ func runCase(ctx context.Context, s *state.Store, dir string, m Manifest, spec S
 		o.Outcome, o.Reason = "invalidated", fmt.Sprintf("prepared target does not match the run before execution: %v", err)
 		return o, nil
 	}
+	target, classpath := filepath.Join(m.Work, "out"), m.Classpath
+	checkVariant := func() error { return nil }
+	if c.VariantName() == Corrected {
+		if variant == nil || variant.Variant == nil {
+			reason := "no corrected variant was recorded"
+			if variant != nil {
+				reason = variant.Error
+			}
+			o.Outcome, o.Reason = "variant_unavailable", "corrected variant unavailable: "+reason
+			return o, nil
+		}
+		target, classpath = filepath.Join(variant.Dir, "out"), variant.Variant.Artifacts.Classpath
+		checkVariant = func() error { return prepare.CheckVariant(variant.Dir, variant.Variant, variant.Outputs) }
+		if err := checkVariant(); err != nil {
+			o.Outcome, o.Reason = "invalidated", "corrected variant does not match its record before execution: "+err.Error()
+			return o, nil
+		}
+	}
 	scratch := filepath.Join(dir, "scratch", fmt.Sprintf("%s-%d", claim.TaskID, claim.Number))
 	caseDir, tmpDir := filepath.Join(scratch, "case"), filepath.Join(scratch, "tmp")
 	if err := os.MkdirAll(filepath.Join(caseDir, "jail"), 0700); err != nil {
@@ -422,15 +470,18 @@ func runCase(ctx context.Context, s *state.Store, dir string, m Manifest, spec S
 	if _, err := s.Get(ctx, m.HarnessSHA); err != nil {
 		return o, err
 	}
-	cp := make([]string, len(m.Classpath))
-	for i, p := range m.Classpath {
+	cp := make([]string, len(classpath))
+	for i, p := range classpath {
+		if filepath.IsAbs(p) || p != filepath.Clean(p) || strings.HasPrefix(p, "..") || strings.ContainsAny(p, ":\n") {
+			return o, fmt.Errorf("unsupported classpath entry %q", p)
+		}
 		cp[i] = "/target/" + filepath.ToSlash(p)
 	}
 	argv := []string{"java", "-XX:-UsePerfData", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss1m", fmt.Sprintf("-Xmx%dm", spec.HeapMB), "-Djava.io.tmpdir=/tmp",
 		"-cp", strings.Join(cp, ":"), "/harness/" + m.HarnessName, "/case/jail"}
 	argv = append(argv, c.Args...)
 	r, err := sandbox.Run(ctx, sandbox.Spec{Argv: argv, Dir: "/case", Tmp: tmpDir, Limits: spec.Limits, Mounts: []sandbox.Mount{
-		{Host: filepath.Join(m.Work, "out"), Path: "/target"},
+		{Host: target, Path: "/target"},
 		{Host: harnessHost, Path: "/harness/" + m.HarnessName},
 		{Host: caseDir, Path: "/case", Writable: true},
 	}})
@@ -444,6 +495,10 @@ func runCase(ctx context.Context, s *state.Store, dir string, m Manifest, spec S
 	o.TargetAfter = after
 	if err != nil || after != m.PreparedSHA {
 		o.Outcome, o.Reason = "invalidated", fmt.Sprintf("prepared target changed during the experiment: %v", err)
+		return o, nil
+	}
+	if err := checkVariant(); err != nil {
+		o.Outcome, o.Reason = "invalidated", "corrected variant changed during the experiment: "+err.Error()
 		return o, nil
 	}
 	promote := func(_ string, b []byte) (string, error) {
@@ -524,6 +579,7 @@ type CaseSummary struct {
 	TaskID         string `json:"task_id"`
 	CaseID         string `json:"case_id"`
 	Role           string `json:"role"`
+	Variant        string `json:"variant"`
 	Outcome        string `json:"outcome"`
 	Assertion      string `json:"assertion"`
 	ObservationSHA string `json:"observation_sha256"`
@@ -561,19 +617,28 @@ func assess(a *Assessment) {
 		case "invalidated":
 			invalid = append(invalid, c.CaseID)
 		}
+		// A control may preserve the property by rejecting the input, so its
+		// target exception counts as holding when the assertion held.
+		controlHeld := c.Role == "control" && c.Outcome == "target_exception" && c.Assertion == "held"
 		if c.Role == "candidate" {
 			allViolated = allViolated && c.Outcome == "property_violated"
 			allHeld = allHeld && c.Outcome == "property_held"
 			if c.Outcome != "property_violated" && c.Outcome != "property_held" {
 				unclear = append(unclear, c.CaseID+"="+c.Outcome)
 			}
-		} else if c.Outcome != "property_held" {
+		} else if c.Outcome != "property_held" && !controlHeld {
 			othersHeld = false
 			unclear = append(unclear, c.CaseID+"="+c.Outcome)
 		}
 	}
 	if !roles["control"] {
 		a.Gaps = append(a.Gaps, "no property-preserving control case was supplied")
+	}
+	for _, c := range a.Cases {
+		if c.Role == "control" && c.Variant == Corrected {
+			a.Gaps = append(a.Gaps, "the corrected control uses an operator-supplied patch of the same revision; the patch is recorded but not independently reviewed")
+			break
+		}
 	}
 	switch {
 	case len(blocked) > 0:
@@ -587,4 +652,87 @@ func assess(a *Assessment) {
 	default:
 		a.Outcome, a.Reason = "inconclusive", "mixed or unclear case outcomes: "+strings.Join(unclear, ", ")
 	}
+}
+
+const VariantRecordSchema = "tekmerion-variant-record-1"
+
+// VariantRecord is the correction task's result. A patch that does not apply
+// or a failed build is recorded, not hidden: control cases on the corrected
+// variant then report variant_unavailable.
+type VariantRecord struct {
+	Schema  string            `json:"schema_version"`
+	Dir     string            `json:"dir"`
+	Variant *prepare.Variant  `json:"variant,omitempty"`
+	Outputs manifest.Outputs  `json:"outputs"`
+	Sources map[string]string `json:"corrected_sources"`
+	Error   string            `json:"error,omitempty"`
+}
+
+// correction builds the corrected variant once, outside the target sandbox,
+// with the project's own recipe and network policy (as TM1 preparation).
+func correction(ctx context.Context, s *state.Store, dir string, snap *state.Snapshot, m Manifest, caps sandbox.Capabilities) (*VariantRecord, error) {
+	t, err := task(snap, "correction")
+	if err != nil {
+		return nil, err
+	}
+	if t.Status != "completed" {
+		claim, err := s.Claim(ctx, snap.Run.ID, t.ID, worker(), 30*time.Minute)
+		if err != nil {
+			return nil, err
+		}
+		rec := VariantRecord{Schema: VariantRecordSchema, Dir: filepath.Join(dir, "variants", fmt.Sprintf("corrected-%d", claim.Number)), Sources: map[string]string{}}
+		v, err := prepare.Verify(m.Work)
+		switch {
+		case !caps.OK:
+			rec.Error = "not built: sandbox capabilities were not established"
+		case err != nil || hash(v.RawManifest) != m.PreparedSHA:
+			rec.Error = fmt.Sprintf("not built: prepared target does not match the run (%v)", err)
+		default:
+			rec.Outputs = v.Project.Build.Outputs
+			patch, err := s.Get(ctx, m.PatchSHA)
+			if err != nil {
+				return nil, finishErr(s, *claim, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(rec.Dir), 0700); err != nil {
+				return nil, finishErr(s, *claim, err)
+			}
+			built, err := prepare.BuildVariant(ctx, v, patch, rec.Dir, io.Discard)
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, finishErr(s, *claim, err)
+			}
+			if err != nil {
+				rec.Error = err.Error()
+			} else {
+				rec.Variant = built
+				for _, f := range built.Changed {
+					if !strings.HasPrefix(f.After, "sha256:") {
+						continue
+					}
+					raw, err := prepare.ReadFile(filepath.Join(rec.Dir, "src"), f.Path, 2<<20)
+					if err != nil {
+						return nil, finishErr(s, *claim, err)
+					}
+					a, err := s.Put(ctx, raw, "text/plain")
+					if err != nil || a.SHA != f.After {
+						return nil, finishErr(s, *claim, fmt.Errorf("corrected source %s changed while recording (%v)", f.Path, err))
+					}
+					rec.Sources[f.Path] = a.SHA
+				}
+			}
+		}
+		sha, err := put(ctx, s, rec)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.Finish(ctx, *claim, "completed", sha, ""); err != nil {
+			return nil, err
+		}
+		return &rec, nil
+	}
+	sha, _ := completed(snap, "correction")
+	var rec VariantRecord
+	if err := decode(ctx, s, sha, &rec); err != nil {
+		return nil, err
+	}
+	return &rec, nil
 }

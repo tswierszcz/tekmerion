@@ -150,7 +150,7 @@ func TestRealExperimentReproducesControlCandidate(t *testing.T) {
 		t.Fatalf("unexpected run: %s %+v", snap.Run.Status, snap.Reproductions)
 	}
 	obs := map[string]Observation{}
-	for _, task := range []string{"case-normal", "case-traversal"} {
+	for _, task := range []string{"case-normal", "case-traversal", "case-corrected-traversal"} {
 		sha, _ := completed(snap, task)
 		var o Observation
 		if err := decode(ctx, s, sha, &o); err != nil {
@@ -164,11 +164,19 @@ func TestRealExperimentReproducesControlCandidate(t *testing.T) {
 	if o := obs["case-normal"]; o.Outcome != "property_held" || len(o.Escapes) != 0 || len(o.Listing.Entries) != 2 || o.Listing.Entries[1].Path != "jail/entry.txt" || !o.Listing.Entries[1].Promoted {
 		t.Fatalf("normal case: %+v", o)
 	}
+	if o := obs["case-corrected-traversal"]; o.Outcome != "target_exception" || o.Assertion != "held" || len(o.Escapes) != 0 || o.Harness == nil || !strings.Contains(o.Harness.Exception, "entry outside the target directory") {
+		t.Fatalf("corrected control case: %+v", o)
+	}
+	var rec VariantRecord
+	sha, _ := completed(snap, "correction")
+	if err := decode(ctx, s, sha, &rec); err != nil || rec.Variant == nil || len(rec.Variant.Changed) != 1 || rec.Sources["testdata/research/lib/fx/research/Extractor.java"] != rec.Variant.Changed[0].After {
+		t.Fatalf("variant record: %+v %v", rec, err)
+	}
 	report, err := Report(ctx, s, snap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Established: **true**", "Reproduction: **reproduced**", "Defect: **candidate**", "no property-preserving control", "| traversal | candidate | **property_violated** |"} {
+	for _, want := range []string{"Established: **true**", "Reproduction: **reproduced**", "Defect: **candidate**", "## Corrected variant", "operator-supplied patch", "| traversal | candidate | original | **property_violated** |", "| corrected-traversal | control | corrected | **target_exception** |"} {
 		if !strings.Contains(string(report), want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}
@@ -180,6 +188,34 @@ func TestRealExperimentReproducesControlCandidate(t *testing.T) {
 	s.Close()
 	if err := Resume(ctx, dir); err != nil {
 		t.Fatal("resume of a completed run must be a no-op: ", err)
+	}
+
+	// A patch that does not apply is recorded; the control cannot hold, so
+	// the assessment is inconclusive rather than reproduced.
+	bad := t.TempDir()
+	raw, _ := os.ReadFile(spec)
+	var sp map[string]any
+	json.Unmarshal(raw, &sp)
+	sp["harness"], _ = filepath.Abs("../../testdata/experiments/extractor/ExtractHarness.java")
+	sp["correction"] = map[string]any{"patch": "bad.patch", "description": "does not apply"}
+	raw, _ = json.Marshal(sp)
+	os.WriteFile(filepath.Join(bad, "spec.json"), raw, 0600)
+	os.WriteFile(filepath.Join(bad, "bad.patch"), []byte("--- a/missing.java\n+++ b/missing.java\n@@ -1 +1 @@\n-x\n+y\n"), 0600)
+	dir3 := filepath.Join(bad, "run")
+	if err := Start(ctx, Options{Hunt: huntDir, Work: work, Spec: filepath.Join(bad, "spec.json"), Candidate: candidate, State: dir3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Resume(ctx, dir3); err != nil {
+		t.Fatal(err)
+	}
+	s3, err := state.Open(ctx, dir3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap3, err := s3.Snapshot(ctx)
+	s3.Close()
+	if err != nil || len(snap3.Reproductions) != 1 || snap3.Reproductions[0].Outcome != "inconclusive" || !strings.Contains(snap3.Reproductions[0].Reason, "corrected-traversal=variant_unavailable") {
+		t.Fatalf("unappliable patch: %+v %v", snap3.Reproductions, err)
 	}
 
 	// A modified target invalidates reproduction instead of producing evidence.

@@ -33,16 +33,39 @@ type Spec struct {
 	Harness     string         `json:"harness"`
 	HeapMB      int64          `json:"heap_mb"`
 	Limits      sandbox.Limits `json:"limits"`
+	Correction  *Correction    `json:"correction,omitempty"`
 	Cases       []Case         `json:"cases"`
 }
 
+// Correction is an operator-supplied patch against the prepared source tree.
+// It is built into a separate corrected variant with the project's recipe.
+type Correction struct {
+	Patch       string `json:"patch"`
+	Description string `json:"description"`
+}
+
 // Case roles: normal input, the candidate's input, and an optional
-// property-preserving control.
+// property-preserving control. Variant is "original" (default) or
+// "corrected", the build of the spec's correction.
 type Case struct {
 	ID          string   `json:"id"`
 	Role        string   `json:"role"`
+	Variant     string   `json:"variant,omitempty"`
 	Description string   `json:"description"`
 	Args        []string `json:"args"`
+}
+
+const (
+	Original  = "original"
+	Corrected = "corrected"
+)
+
+// VariantName returns the effective variant.
+func (c Case) VariantName() string {
+	if c.Variant == "" {
+		return Original
+	}
+	return c.Variant
 }
 
 var (
@@ -86,6 +109,18 @@ func (s Spec) Validate() error {
 			return fmt.Errorf("case %s: role must be normal, candidate or control", c.ID)
 		}
 		roles[c.Role]++
+		switch c.VariantName() {
+		case Original:
+		case Corrected:
+			if s.Correction == nil {
+				return fmt.Errorf("case %s uses the corrected variant but the spec has no correction", c.ID)
+			}
+		default:
+			return fmt.Errorf("case %s: variant must be original or corrected", c.ID)
+		}
+		if c.Role != "control" && c.VariantName() == Corrected {
+			return fmt.Errorf("case %s: only control cases may run on the corrected variant", c.ID)
+		}
 		if c.Description == "" || len(c.Description) > 1000 || len(c.Args) > 16 {
 			return fmt.Errorf("case %s needs a description and at most 16 arguments", c.ID)
 		}
@@ -99,6 +134,9 @@ func (s Spec) Validate() error {
 				}
 			}
 		}
+	}
+	if s.Correction != nil && (s.Correction.Patch == "" || s.Correction.Description == "" || len(s.Correction.Description) > 1000) {
+		return fmt.Errorf("correction needs a patch path and a description")
 	}
 	if roles["normal"] == 0 || roles["candidate"] == 0 {
 		return fmt.Errorf("experiment needs at least one normal and one candidate case")

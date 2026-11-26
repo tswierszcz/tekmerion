@@ -14,7 +14,37 @@
     "output_bytes": 65536
   },
   "cases": [
-    {"id": "normal", "role": "normal", "description": "Plain entry name; the file is expected inside the confinement directory.", "args": ["entry.txt", "benign"]},
-    {"id": "traversal", "role": "candidate", "description": "Entry name with one parent component, as predicted by the candidate.", "args": ["../escaped.txt", "payload"]}
-  ]
+    {
+      "id": "normal",
+      "role": "normal",
+      "description": "Plain entry name; the file is expected inside the confinement directory.",
+      "args": [
+        "entry.txt",
+        "benign"
+      ]
+    },
+    {
+      "id": "traversal",
+      "role": "candidate",
+      "description": "Entry name with one parent component, as predicted by the candidate.",
+      "args": [
+        "../escaped.txt",
+        "payload"
+      ]
+    },
+    {
+      "id": "corrected-traversal",
+      "role": "control",
+      "variant": "corrected",
+      "description": "The candidate's ../ entry name against the corrected variant; the property is expected to hold.",
+      "args": [
+        "../escaped.txt",
+        "payload"
+      ]
+    }
+  ],
+  "correction": {
+    "patch": "contain-entry.patch",
+    "description": "Normalize the resolved entry path and reject it unless it stays under the target directory."
+  }
 }
