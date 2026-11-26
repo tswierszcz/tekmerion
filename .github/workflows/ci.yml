@@ -20,8 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The module minimum from go.mod and the current stable release.
-        go: ["1.24.x", "stable"]
+        # Both Go release lines that still receive security fixes; go.mod
+        # requires at least the patched 1.26.11.
+        go: ["1.26.x", "1.27.x"]
     env:
       CGO_ENABLED: "1" # github.com/mattn/go-sqlite3 needs cgo and a C compiler
     steps:
@@ -45,3 +46,20 @@ jobs:
       # locally with ARIADNE_SRC=/path/to/ariadne go test -race ./...
       - name: go test
         run: go test -race -count=1 ./...
+
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.27.x"
+          cache: true
+      # Fails on known vulnerabilities reachable from this module's code in
+      # the standard library or dependencies.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
