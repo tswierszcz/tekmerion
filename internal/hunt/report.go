@@ -43,7 +43,7 @@ func Report(ctx context.Context, s *state.Store, snap *state.Snapshot) (string, 
 		if e, ok := events[u.ID]; ok {
 			status, reason = e.Status, e.Reason
 		} else if outside[u.ID] {
-			status, reason = "deferred", "outside max-units for this wave"
+			status, reason = "deferred", "not selected for this wave (max-units or -unit)"
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", u.ID, u.Status, status, escape(reason))
 	}

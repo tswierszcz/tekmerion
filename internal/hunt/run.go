@@ -40,6 +40,7 @@ type Manifest struct {
 	SeedsSHA      string   `json:"coverage_seeds_sha256"`
 	Jobs          []Job    `json:"jobs"`
 	DeferredUnits []string `json:"deferred_unit_ids"`
+	SelectedUnits []string `json:"selected_unit_ids,omitempty"`
 }
 type Config recon.Config
 
@@ -52,6 +53,7 @@ type Replay struct {
 type Options struct {
 	Recon, Work, State, Binary string
 	MaxUnits                   int
+	Units                      []string // optional planned unit IDs; others are deferred
 	Offline                    bool
 	Replay                     []byte
 	Model                      *Config
@@ -94,6 +96,9 @@ func Start(ctx context.Context, o Options) error {
 	}
 	if modes != 1 || o.MaxUnits < 1 || o.MaxUnits > 64 {
 		return fmt.Errorf("select one Hunt mode and max-units in 1..64")
+	}
+	if len(o.Units) > o.MaxUnits {
+		return fmt.Errorf("%d units selected but max-units is %d", len(o.Units), o.MaxUnits)
 	}
 	if o.Model != nil {
 		c := o.Model
@@ -225,11 +230,30 @@ func Start(ctx context.Context, o Options) error {
 	}
 	tasks := []state.TaskInput{{ID: "coverage", Stage: "coverage", InputSHA: seedsSHA}}
 	selected := map[string]bool{}
+	wanted := map[string]bool{}
+	for _, id := range o.Units {
+		if wanted[id] {
+			return fmt.Errorf("unit selected twice: %s", id)
+		}
+		wanted[id] = true
+	}
+	planned := map[string]bool{}
+	for _, u := range snap.Coverage {
+		if u.Status == "planned" {
+			planned[u.ID] = true
+		}
+	}
+	for _, id := range o.Units {
+		if !planned[id] {
+			return fmt.Errorf("selected unit is not a planned Recon unit: %s", id)
+		}
+	}
+	m.SelectedUnits = append([]string(nil), o.Units...)
 	for _, u := range snap.Coverage {
 		if u.Status != "planned" {
 			continue
 		}
-		if len(m.Jobs) >= o.MaxUnits {
+		if len(m.Jobs) >= o.MaxUnits || (len(wanted) > 0 && !wanted[u.ID]) {
 			m.DeferredUnits = append(m.DeferredUnits, u.ID)
 			continue
 		}
