@@ -10,6 +10,10 @@ import (
 	"github.com/tswierszcz/tekmerion/internal/state"
 )
 
+// MaxTimeoutSeconds bounds one model request, including slow reasoning models
+// that keep an HTTP 200 response open with keep-alive whitespace while generating.
+const MaxTimeoutSeconds = 300
+
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`

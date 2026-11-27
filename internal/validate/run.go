@@ -189,7 +189,7 @@ func Start(ctx context.Context, o Options) error {
 	}
 	if o.Model != nil {
 		c := o.Model
-		if c.Schema != "tekmerion-validate-model-1" || !c.AllowSourceContext || o.Budget == nil || c.Model == "" || c.Provider == "" || c.MaxAttempts < 1 || c.MaxAttempts > 5 || c.TimeoutSeconds < 1 || c.TimeoutSeconds > 120 || c.InputTokenBound <= 0 || c.MaxOutputTokens <= 0 {
+		if c.Schema != "tekmerion-validate-model-1" || !c.AllowSourceContext || o.Budget == nil || c.Model == "" || c.Provider == "" || c.MaxAttempts < 1 || c.MaxAttempts > 5 || c.TimeoutSeconds < 1 || c.TimeoutSeconds > llm.MaxTimeoutSeconds || c.InputTokenBound <= 0 || c.MaxOutputTokens <= 0 {
 			return fmt.Errorf("model validation requires bounded settings, source permission and its own explicit budget")
 		}
 		p, err := pricing.ParseSnapshot(o.Prices)

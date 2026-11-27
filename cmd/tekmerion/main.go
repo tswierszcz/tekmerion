@@ -316,7 +316,7 @@ func cmdInfer(ctx context.Context, args []string) error {
 	budgetFile := fs.String("budget", "", "immutable run budget")
 	dir := fs.String("state", "", "new run state directory")
 	attempts := fs.Int("attempts", 1, "maximum attempts including retries (1..5)")
-	timeout := fs.Int("timeout-seconds", 30, "deadline per request (1..120 seconds)")
+	timeout := fs.Int("timeout-seconds", 30, fmt.Sprintf("deadline per request (1..%d seconds)", llm.MaxTimeoutSeconds))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -439,7 +439,7 @@ func resumeRun(ctx context.Context, dir string) error {
 		store.Close()
 		var provider llm.Provider
 		if needsModel {
-			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 			if err != nil {
 				return err
 			}
@@ -461,7 +461,7 @@ func resumeRun(ctx context.Context, dir string) error {
 		store.Close()
 		var provider llm.Provider
 		if needsModel {
-			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 			if err != nil {
 				return err
 			}
@@ -484,7 +484,7 @@ func resumeRun(ctx context.Context, dir string) error {
 		store.Close()
 		var provider llm.Provider
 		if needsModel {
-			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+			client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 			if err != nil {
 				return err
 			}
@@ -589,7 +589,7 @@ func cmdRecon(ctx context.Context, args []string) error {
 			return err
 		}
 		options.Prices = priceRaw
-		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 		if err != nil {
 			return err
 		}
@@ -659,7 +659,7 @@ func cmdHunt(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 		if err != nil {
 			return err
 		}
@@ -763,7 +763,7 @@ func cmdValidate(ctx context.Context, args []string) error {
 		if o.Prices, err = os.ReadFile(*prices); err != nil {
 			return err
 		}
-		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: 2 * time.Minute})
+		client, err := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY"), Timeout: llm.MaxTimeoutSeconds * time.Second})
 		if err != nil {
 			return err
 		}

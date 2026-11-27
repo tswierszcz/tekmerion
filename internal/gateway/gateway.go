@@ -48,7 +48,7 @@ func Parse(raw []byte) (Task, error) {
 	if err := jsonx.Decode(raw, &t, false); err != nil {
 		return t, err
 	}
-	if t.Schema != TaskSchema || t.MaxAttempts < 1 || t.MaxAttempts > 5 || t.TimeoutSeconds < 1 || t.TimeoutSeconds > 120 || t.PricingSHA == "" {
+	if t.Schema != TaskSchema || t.MaxAttempts < 1 || t.MaxAttempts > 5 || t.TimeoutSeconds < 1 || t.TimeoutSeconds > llm.MaxTimeoutSeconds || t.PricingSHA == "" {
 		return t, fmt.Errorf("model task requires schema, saved pricing and bounded attempts/deadline")
 	}
 	return t, t.Request.Validate()
