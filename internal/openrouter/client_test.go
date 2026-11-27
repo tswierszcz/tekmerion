@@ -167,3 +167,35 @@ func TestClientTimeoutBound(t *testing.T) {
 		t.Fatal("accepted a timeout above the cap")
 	}
 }
+
+func TestReasoningLimitSent(t *testing.T) {
+	for _, tc := range []struct {
+		tokens int64
+		effort string
+		want   string
+	}{{0, "", ""}, {12, "", `{"max_tokens":12}`}, {0, "low", `{"effort":"low"}`}} {
+		var got string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]json.RawMessage
+			raw, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Error(err)
+			}
+			got = string(body["reasoning"])
+			w.Write([]byte(success))
+		}))
+		client, err := New(Config{Endpoint: server.URL, APIKey: "test-secret"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := request()
+		in.ReasoningMaxTokens, in.ReasoningEffort = tc.tokens, tc.effort
+		if _, err := client.Complete(context.Background(), in); err != nil {
+			t.Fatal(err)
+		}
+		server.Close()
+		if got != tc.want {
+			t.Fatalf("reasoning %d/%q sent %s, want %s", tc.tokens, tc.effort, got, tc.want)
+		}
+	}
+}

@@ -29,6 +29,11 @@ type Request struct {
 	InputTokenBound  int64     `json:"input_token_bound"`
 	MaxOutputTokens  int64     `json:"max_output_tokens"`
 	JSONOutput       bool      `json:"json_output"`
+	// Optional reasoning limits, sent to the provider as OpenRouter's
+	// "reasoning" object. At most one is set; both are omitted from the
+	// recorded request when unset, so earlier request identities are unchanged.
+	ReasoningMaxTokens int64  `json:"reasoning_max_tokens,omitempty"`
+	ReasoningEffort    string `json:"reasoning_effort,omitempty"`
 }
 
 func (r Request) Validate() error {
@@ -38,10 +43,26 @@ func (r Request) Validate() error {
 	if r.Model == "" || r.Provider == "" || r.PromptRevision == "" || len(r.Messages) == 0 || r.InputTokenBound <= 0 || r.MaxOutputTokens <= 0 || r.InputTokenBound > math.MaxInt64-r.MaxOutputTokens {
 		return fmt.Errorf("model request needs explicit route, prompt revision, messages and finite token bounds")
 	}
+	if err := CheckReasoning(r.MaxOutputTokens, r.ReasoningMaxTokens, r.ReasoningEffort); err != nil {
+		return err
+	}
 	for _, m := range r.Messages {
 		if (m.Role != "system" && m.Role != "user" && m.Role != "assistant") || m.Content == "" {
 			return fmt.Errorf("unsupported or empty message")
 		}
+	}
+	return nil
+}
+
+// CheckReasoning validates optional reasoning limits. A token limit must leave
+// room for the answer inside max_output_tokens, since reasoning tokens count
+// toward the output cap; an effort is one of OpenRouter's named levels.
+func CheckReasoning(maxOutputTokens, reasoningMaxTokens int64, effort string) error {
+	if reasoningMaxTokens < 0 || reasoningMaxTokens > 0 && reasoningMaxTokens >= maxOutputTokens || reasoningMaxTokens > 0 && effort != "" {
+		return fmt.Errorf("reasoning limit must be either a token count below max_output_tokens or an effort, not both")
+	}
+	if effort != "" && effort != "minimal" && effort != "low" && effort != "medium" && effort != "high" {
+		return fmt.Errorf("unsupported reasoning effort")
 	}
 	return nil
 }

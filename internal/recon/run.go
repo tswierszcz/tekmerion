@@ -35,6 +35,8 @@ type Config struct {
 	ExpectedProvider   string `json:"expected_returned_provider,omitempty"`
 	InputTokenBound    int64  `json:"input_token_bound"`
 	MaxOutputTokens    int64  `json:"max_output_tokens"`
+	ReasoningMaxTokens int64  `json:"reasoning_max_tokens,omitempty"`
+	ReasoningEffort    string `json:"reasoning_effort,omitempty"`
 	MaxAttempts        int    `json:"max_attempts"`
 	TimeoutSeconds     int    `json:"timeout_seconds"`
 	AllowSourceContext bool   `json:"allow_source_context"`
@@ -73,6 +75,9 @@ func Start(ctx context.Context, options Options) error {
 		config := options.Model
 		if config.Schema != "tekmerion-recon-model-1" || !config.AllowSourceContext || options.Budget == nil || config.Model == "" || config.Provider == "" || config.InputTokenBound <= 0 || config.MaxOutputTokens <= 0 || config.MaxAttempts < 1 || config.MaxAttempts > 5 || config.TimeoutSeconds < 1 || config.TimeoutSeconds > llm.MaxTimeoutSeconds {
 			return fmt.Errorf("Recon model mode needs bounded settings, source-context permission and a budget")
+		}
+		if err := llm.CheckReasoning(config.MaxOutputTokens, config.ReasoningMaxTokens, config.ReasoningEffort); err != nil {
+			return err
 		}
 		if err := options.Budget.Validate(); err != nil {
 			return err
@@ -156,7 +161,7 @@ func Start(ctx context.Context, options Options) error {
 		if err != nil {
 			return err
 		}
-		request := llm.Request{Role: "recon", Model: config.Model, Provider: config.Provider, ExpectedModel: config.ExpectedModel, ExpectedProvider: config.ExpectedProvider, PromptRevision: PromptRevision, Messages: []llm.Message{{Role: "system", Content: prompt}, {Role: "user", Content: string(contextRaw)}}, InputTokenBound: config.InputTokenBound, MaxOutputTokens: config.MaxOutputTokens, JSONOutput: true}
+		request := llm.Request{Role: "recon", Model: config.Model, Provider: config.Provider, ExpectedModel: config.ExpectedModel, ExpectedProvider: config.ExpectedProvider, PromptRevision: PromptRevision, Messages: []llm.Message{{Role: "system", Content: prompt}, {Role: "user", Content: string(contextRaw)}}, InputTokenBound: config.InputTokenBound, MaxOutputTokens: config.MaxOutputTokens, ReasoningMaxTokens: config.ReasoningMaxTokens, ReasoningEffort: config.ReasoningEffort, JSONOutput: true}
 		task := gateway.Task{Schema: gateway.TaskSchema, Request: request, PricingSHA: priceSHA, MaxAttempts: config.MaxAttempts, TimeoutSeconds: config.TimeoutSeconds}
 		raw, err := json.Marshal(task)
 		if err != nil {
