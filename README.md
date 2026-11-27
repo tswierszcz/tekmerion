@@ -168,7 +168,7 @@ go run ./cmd/tekmerion report -state /tmp/tekmerion-hunt > /tmp/tekmerion-hunt/r
 go run ./cmd/tekmerion resume -state /tmp/tekmerion-hunt
 ```
 
-`-offline` prepares bounded contexts and explicitly defers semantic research. It generates no hypotheses, source-review checks or paid requests. `-replay FILE` accepts `{"schema_version":"tekmerion-hunt-replay-1","outputs":{"<unit-id>":{...}}}` containing one `tekmerion-hunt-result-1` output for each selected unit. Outputs echo the saved context's `input_identity`; unknown/unselected units are rejected. Saved contexts are linked by the run manifest and report.
+`-max-units N` takes the first N planned units in Recon order. `-unit ID` (repeatable, at most `-max-units`) selects specific planned units instead; every other planned unit is recorded as deferred and the selection is kept in the run manifest. `-offline` prepares bounded contexts and explicitly defers semantic research. It generates no hypotheses, source-review checks or paid requests. `-replay FILE` accepts `{"schema_version":"tekmerion-hunt-replay-1","outputs":{"<unit-id>":{...}}}` containing one `tekmerion-hunt-result-1` output for each selected unit. Outputs echo the saved context's `input_identity`; unknown/unselected units are rejected. Saved contexts are linked by the run manifest and report.
 
 The model path uses the same gateway, bounded retries, route checks and accounting:
 

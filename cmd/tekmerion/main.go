@@ -616,13 +616,15 @@ func cmdHunt(ctx context.Context, args []string) error {
 	prices := fs.String("prices", "", "normalized model pricing snapshot")
 	budget := fs.String("budget", "", "explicit budget for this derived Hunt run")
 	maxUnits := fs.Int("max-units", 8, "maximum planned units in this wave (1..64)")
+	var units multiFlag
+	fs.Var(&units, "unit", "planned Recon unit ID to Hunt (repeatable); other planned units are deferred")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *parent == "" || *work == "" || *binary == "" || *dir == "" || fs.NArg() != 0 {
 		return fmt.Errorf("hunt requires -recon, -work, -ariadne and new -state")
 	}
-	o := hunt.Options{Recon: *parent, Work: *work, State: *dir, Binary: *binary, MaxUnits: *maxUnits, Offline: *offline}
+	o := hunt.Options{Recon: *parent, Work: *work, State: *dir, Binary: *binary, MaxUnits: *maxUnits, Units: units, Offline: *offline}
 	if *replay != "" {
 		raw, err := os.ReadFile(*replay)
 		if err != nil {

@@ -295,6 +295,44 @@ func TestHuntOfflineAndPartialBudget(t *testing.T) {
 	}
 }
 
+func TestHuntUnitSelection(t *testing.T) {
+	ctx, work, parent, bin := preparedRecon(t)
+	root := t.TempDir()
+	first := filepath.Join(root, "first")
+	if err := Start(ctx, Options{Recon: parent, Work: work, State: first, Binary: bin, MaxUnits: 1, Offline: true}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, m := openRun(t, ctx, first)
+	if len(m.DeferredUnits) == 0 {
+		t.Skip("fixture has a single planned unit")
+	}
+	planned := len(m.Jobs) + len(m.DeferredUnits)
+	target := m.DeferredUnits[len(m.DeferredUnits)-1]
+	picked := filepath.Join(root, "picked")
+	if err := Start(ctx, Options{Recon: parent, Work: work, State: picked, Binary: bin, MaxUnits: 64, Units: []string{target}, Offline: true}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, m = openRun(t, ctx, picked)
+	if len(m.Jobs) != 1 || len(m.DeferredUnits) != planned-1 || len(m.SelectedUnits) != 1 || m.SelectedUnits[0] != target {
+		t.Fatalf("selection did not pick exactly the requested unit: jobs=%d deferred=%d selected=%v", len(m.Jobs), len(m.DeferredUnits), m.SelectedUnits)
+	}
+	for _, id := range m.DeferredUnits {
+		if id == target {
+			t.Fatal("selected unit was deferred")
+		}
+	}
+	for name, o := range map[string]Options{
+		"unknown":   {Units: []string{"sha256:not-a-unit"}, MaxUnits: 64},
+		"duplicate": {Units: []string{target, target}, MaxUnits: 64},
+		"over max":  {Units: []string{target, "sha256:other"}, MaxUnits: 1},
+	} {
+		o.Recon, o.Work, o.State, o.Binary, o.Offline = parent, work, filepath.Join(root, strings.ReplaceAll(name, " ", "-")), bin, true
+		if err := Start(ctx, o); err == nil {
+			t.Errorf("%s selection was accepted", name)
+		}
+	}
+}
+
 type rejectProof struct{ inner ariadne.Querier }
 
 func (q rejectProof) Query(ctx context.Context, raw []byte) (*ariadne.Result, error) {
