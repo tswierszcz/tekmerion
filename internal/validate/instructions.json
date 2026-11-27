@@ -1,6 +1,6 @@
 {
   "schema_version": "tekmerion-instruction-provenance-1",
-  "prompt_revision": "validate-2",
+  "prompt_revision": "validate-3",
   "rules_revision": "tekmerion-decision-rules-1",
   "instruction_sources": [{
     "repository": "https://github.com/cloudflare/security-audit-skill",

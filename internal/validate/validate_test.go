@@ -145,7 +145,7 @@ func TestPromptListsExactResultKeys(t *testing.T) {
 	if got := jsonKeys(t, Assessment{}); got != "claim, status, observation, citations, evidence" {
 		t.Errorf("assessment keys changed to %q; update the prompt", got)
 	}
-	if !strings.Contains(prompt, "each assessment has exactly claim (the claim id), status (supported, refuted or unresolved), observation (a string), citations and evidence") {
+	if !strings.Contains(prompt, "Each assessment has exactly claim (the claim id), status (supported, refuted or unresolved), observation (a string), citations and evidence") {
 		t.Error("prompt does not state the assessment keys")
 	}
 }
@@ -160,5 +160,18 @@ func TestEchoedVerifierInputFieldsRejected(t *testing.T) {
 		if _, err := ParseOutput(bad, c); err == nil {
 			t.Errorf("accepted echoed top-level field %s", echo)
 		}
+	}
+}
+func TestPromptPinsClaimIDs(t *testing.T) {
+	for _, want := range []string{"copied verbatim from that entry's id", "Never invent, rename, merge or split claim ids", "exactly as many assessments as claims_to_assess has entries"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks claim-id rule %q", want)
+		}
+	}
+	c := testContext()
+	o := supportedOutput(c)
+	o.Claims = append(o.Claims, Assessment{Claim: "archive_author_chain", Status: "supported", Observation: "extra", Citations: []recon.Citation{c.RootCause}, Evidence: []string{"traversal"}})
+	if err := o.Validate(c); err == nil {
+		t.Fatal("accepted an invented claim id")
 	}
 }
