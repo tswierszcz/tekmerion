@@ -1,9 +1,11 @@
 package recon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -64,7 +66,7 @@ func Build(ctx context.Context, s *state.Store, verified *prepare.Verified, q ar
 		return nil, fmt.Errorf("declared threat model exceeds the Recon fact cap")
 	}
 	if len(verified.Project.ThreatModel) > 0 && string(verified.Project.ThreatModel) != "null" {
-		c.Declarations = append(c.Declarations, string(verified.Project.ThreatModel))
+		c.Declarations = append(c.Declarations, declarations(verified.Project.ThreatModel)...)
 	} else {
 		c.Gaps = append(c.Gaps, "user threat model is unspecified; no attacker authority is established")
 	}
@@ -351,4 +353,40 @@ func Build(ctx context.Context, s *state.Store, verified *prepare.Verified, q ar
 		}
 	}
 	return &Inventory{Context: c, Entries: entries}, nil
+}
+
+// declarations splits a declared threat model into individually quotable
+// statements, because Hunt accepts a user_declared fact only when its text
+// equals one declaration exactly. A JSON string is one statement; an array of
+// strings or an object whose values are all strings yields one statement per
+// value, in document order (object keys only label the values). Any other
+// shape, or an empty value, is kept verbatim as a single declaration.
+func declarations(raw json.RawMessage) []string {
+	var one string
+	if json.Unmarshal(raw, &one) == nil {
+		return []string{one}
+	}
+	var list []string
+	if json.Unmarshal(raw, &list) == nil && len(list) > 0 && !slices.Contains(list, "") {
+		return list
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := d.Token(); err == nil && t == json.Delim('{') {
+		values := []string{}
+		for d.More() {
+			if _, err := d.Token(); err != nil {
+				return []string{string(raw)}
+			}
+			t, err := d.Token()
+			v, ok := t.(string)
+			if err != nil || !ok || v == "" {
+				return []string{string(raw)}
+			}
+			values = append(values, v)
+		}
+		if len(values) > 0 {
+			return values
+		}
+	}
+	return []string{string(raw)}
 }

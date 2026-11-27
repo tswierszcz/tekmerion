@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -511,5 +512,21 @@ func TestCoverageCanonicalIdentityKeepsSourceRevisionSeparate(t *testing.T) {
 	other, _ := canonicalUnit(c, entry)
 	if other == overload {
 		t.Fatal("scenarios collapsed into one unit")
+	}
+}
+func TestThreatModelDeclarationsAreQuotable(t *testing.T) {
+	obj := `{"principal": "An application calls the API.", "authority": "The caller chooses the output directory."}`
+	for raw, want := range map[string][]string{
+		`"Callers are trusted."`:      {"Callers are trusted."},
+		`["first", "second"]`:         {"first", "second"},
+		obj:                           {"An application calls the API.", "The caller chooses the output directory."},
+		`{"a": "x", "b": {"c": "y"}}`: {`{"a": "x", "b": {"c": "y"}}`},
+		`{"a": ""}`:                   {`{"a": ""}`},
+		`["x", 1]`:                    {`["x", 1]`},
+		`{}`:                          {`{}`},
+	} {
+		if got := declarations(json.RawMessage(raw)); !slices.Equal(got, want) {
+			t.Errorf("declarations(%s) = %q, want %q", raw, got, want)
+		}
 	}
 }
