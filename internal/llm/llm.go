@@ -12,7 +12,7 @@ import (
 
 // MaxTimeoutSeconds bounds one model request, including slow reasoning models
 // that keep an HTTP 200 response open with keep-alive whitespace while generating.
-const MaxTimeoutSeconds = 300
+const MaxTimeoutSeconds = 600
 
 type Message struct {
 	Role    string `json:"role"`
