@@ -2,6 +2,7 @@ package validate
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -117,5 +118,47 @@ func TestDecisionRules(t *testing.T) {
 	decide(&d, ref)
 	if !strings.Contains(d.Reason, "does not restore a refuted premise") {
 		t.Error("rejection despite reproduction not explained")
+	}
+}
+
+// jsonKeys lists the JSON member names of a struct type in declaration order.
+func jsonKeys(t *testing.T, v any) string {
+	t.Helper()
+	typ := reflect.TypeOf(v)
+	keys := []string{}
+	for i := 0; i < typ.NumField(); i++ {
+		keys = append(keys, strings.Split(typ.Field(i).Tag.Get("json"), ",")[0])
+	}
+	return strings.Join(keys, ", ")
+}
+func TestPromptListsExactResultKeys(t *testing.T) {
+	for name, want := range map[string]string{
+		"output":   "top-level keys are exactly " + jsonKeys(t, Output{}) + " and nothing else",
+		"control":  "Each control has exactly " + jsonKeys(t, Control{}) + ".",
+		"citation": "Each citation has exactly " + jsonKeys(t, recon.Citation{}) + " ",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt does not state the %s keys: %q", name, want)
+		}
+	}
+	// Assessment keys are described inline with their meaning; check each name and order.
+	if got := jsonKeys(t, Assessment{}); got != "claim, status, observation, citations, evidence" {
+		t.Errorf("assessment keys changed to %q; update the prompt", got)
+	}
+	if !strings.Contains(prompt, "each assessment has exactly claim (the claim id), status (supported, refuted or unresolved), observation (a string), citations and evidence") {
+		t.Error("prompt does not state the assessment keys")
+	}
+}
+func TestEchoedVerifierInputFieldsRejected(t *testing.T) {
+	c := testContext()
+	raw, _ := json.Marshal(supportedOutput(c))
+	if _, err := ParseOutput(raw, c); err != nil {
+		t.Fatal(err)
+	}
+	for _, echo := range []string{`"candidate_id":"sha256:c"`, `"candidate_canonical":"cause"`, `"repository":"example"`} {
+		bad := []byte(strings.TrimSuffix(string(raw), "}") + "," + echo + "}")
+		if _, err := ParseOutput(bad, c); err == nil {
+			t.Errorf("accepted echoed top-level field %s", echo)
+		}
 	}
 }
