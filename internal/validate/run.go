@@ -95,6 +95,9 @@ func BuildContext(ctx context.Context, dir string) (Context, *state.Snapshot, er
 	}
 	c.CandidateID, c.Canonical = m.CandidateID, m.CandidateCanonical
 	excerpts, gaps := map[string]bool{}, map[string]bool{}
+	// This run is the independent verification; the experiment's
+	// "has not run" gap would contradict its own decision.
+	gaps[experiment.PendingVerificationGap] = true
 	for i, sha := range m.OccurrenceSHAs {
 		var o hunt.Occurrence
 		if err := decode(ctx, s, sha, &o); err != nil {

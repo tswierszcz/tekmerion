@@ -597,6 +597,10 @@ type Assessment struct {
 	Gaps            []string      `json:"gaps"`
 }
 
+// PendingVerificationGap is true of an experiment run and false inside the
+// validation run that performs that verification, which drops it.
+const PendingVerificationGap = "independent verification (RH-T5) has not run; defect remains candidate"
+
 // assess derives the reproduction axis with fixed rules: every candidate case
 // must violate the property while every normal and control case holds it.
 // It never changes the defect or novelty axes.
@@ -604,7 +608,7 @@ func assess(a *Assessment) {
 	a.Gaps = []string{
 		"the assertion observes file creation in the worker's only writable locations (/case and /tmp); writes elsewhere are refused by the read-only sandbox and surface as target exceptions, not as violations",
 		"the harness is checked in and supplied by the operator; it is not independently reviewed in this run",
-		"independent verification (RH-T5) has not run; defect remains candidate",
+		PendingVerificationGap,
 	}
 	roles := map[string]bool{}
 	var blocked, invalid, unclear []string

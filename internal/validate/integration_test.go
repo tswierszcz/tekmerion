@@ -92,6 +92,11 @@ func TestRealValidationLabels(t *testing.T) {
 	if err != nil || again.Identity != c.Identity {
 		t.Fatal("verifier context is not deterministic")
 	}
+	for _, g := range c.Gaps {
+		if g == experiment.PendingVerificationGap {
+			t.Fatal("verifier context keeps the experiment's pending-verification gap")
+		}
+	}
 	if c.Experiment.Reproduction != "reproduced" || len(c.Experiment.Cases) != 3 || c.Experiment.Patch == "" || len(c.Claims) < 6 || !strings.Contains(c.Experiment.Harness, "ExtractHarness") {
 		t.Fatalf("context: %+v", c.Experiment)
 	}
@@ -122,6 +127,9 @@ func TestRealValidationLabels(t *testing.T) {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q", want)
 		}
+	}
+	if strings.Contains(report, experiment.PendingVerificationGap) {
+		t.Error("confirmed report still says independent verification has not run")
 	}
 	if err := Resume(ctx, confirmed, nil); err != nil || model.calls != 1 {
 		t.Fatal("completed validation must not call the model again")
