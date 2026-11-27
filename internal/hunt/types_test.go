@@ -213,12 +213,12 @@ func TestArityHelpers(t *testing.T) {
 	}
 }
 
-// The model once returned counterarguments as an array; the prompt must say
-// that every narrative candidate field is one string, and those fields must
-// still be strings in the schema.
+// The model once returned counterarguments as an array, and after a broad
+// "fields are strings" rule it also flattened facts into strings. The prompt
+// must name exactly the string fields and keep facts as objects.
 func TestPromptNarrativeFieldsAreStrings(t *testing.T) {
 	fields := "invariant, suspected_mechanism, prediction, experiment, existing_controls and counterarguments"
-	if !strings.Contains(prompt, fields+" are each one JSON string, never an array or object") {
+	if !strings.Contains(prompt, "Only these six narrative fields are plain JSON strings: "+fields+" (never an array or object") || !strings.Contains(prompt, "principal, resource and controlled_input stay fact objects") {
 		t.Fatal("prompt does not state that narrative candidate fields are strings")
 	}
 	types := map[string]bool{}
