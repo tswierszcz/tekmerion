@@ -198,6 +198,11 @@ func TestRoleValidationRetriesAreBoundedAndAccounted(t *testing.T) {
 	if calls.Load() != 2 || len(snap.Attempts) != 2 || snap.Run.Status != "failed" || snap.Budget.Requests != 2 || snap.Budget.Settled != 0 {
 		t.Fatal("unbounded or unaccounted corrective retries")
 	}
+	for _, a := range snap.Attempts {
+		if a.Diagnostic != "role-specific structured output validation failed: invalid citation" {
+			t.Fatalf("validation diagnostic lost its reason: %q", a.Diagnostic)
+		}
+	}
 	if _, err := Execute(context.Background(), s, "recon", provider, nil); err == nil || calls.Load() != 2 {
 		t.Fatal("failed terminal task restarted")
 	}
@@ -255,5 +260,11 @@ func TestTaskTimeoutBound(t *testing.T) {
 	}
 	if llm.MaxTimeoutSeconds < 300 {
 		t.Fatalf("request timeout cap %d s is below what slow reasoning models need", llm.MaxTimeoutSeconds)
+	}
+}
+func TestValidationReasonIsBounded(t *testing.T) {
+	got := validationReason(errors.New("citation outside saved excerpts: a\nb\x00" + strings.Repeat("x", 500)))
+	if strings.ContainsAny(got, "\n\x00") || len([]rune(got)) != 301 || !strings.HasPrefix(got, "citation outside saved excerpts: a b ") {
+		t.Fatalf("unbounded or unsanitized reason: %q", got)
 	}
 }

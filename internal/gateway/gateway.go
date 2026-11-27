@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/tswierszcz/tekmerion/internal/jsonx"
@@ -187,7 +188,7 @@ func Execute(ctx context.Context, s *state.Store, taskID string, provider llm.Pr
 		}
 		if callErr == nil && validate != nil {
 			if err := validate(result.Content); err != nil {
-				callErr = fmt.Errorf("role-specific structured output validation failed")
+				callErr = fmt.Errorf("role-specific structured output validation failed: %s", validationReason(err))
 				result.Retryable = true
 			}
 		}
@@ -270,4 +271,20 @@ func Execute(ctx context.Context, s *state.Store, taskID string, provider llm.Pr
 
 	}
 	return nil, fmt.Errorf("model task attempt cap reached")
+}
+
+// validationReason bounds a validator error for diagnostics. Validator
+// messages are harness text but may quote model-supplied values (a cited
+// path, a selector), so control characters are replaced and length capped.
+func validationReason(err error) string {
+	r := []rune(strings.Map(func(c rune) rune {
+		if c < 0x20 || c == 0x7f {
+			return ' '
+		}
+		return c
+	}, err.Error()))
+	if len(r) > 300 {
+		r = append(r[:300], '…')
+	}
+	return string(r)
 }
