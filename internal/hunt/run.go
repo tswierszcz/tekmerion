@@ -105,6 +105,9 @@ func Start(ctx context.Context, o Options) error {
 		if c.Schema != "tekmerion-hunt-model-1" || !c.AllowSourceContext || o.Budget == nil || c.Model == "" || c.Provider == "" || c.MaxAttempts < 1 || c.MaxAttempts > 5 || c.TimeoutSeconds < 1 || c.TimeoutSeconds > llm.MaxTimeoutSeconds || c.InputTokenBound <= 0 || c.MaxOutputTokens <= 0 {
 			return fmt.Errorf("model Hunt requires bounded settings, source permission and its own explicit budget")
 		}
+		if err := llm.CheckReasoning(c.MaxOutputTokens, c.ReasoningMaxTokens, c.ReasoningEffort); err != nil {
+			return err
+		}
 		p, err := pricing.ParseSnapshot(o.Prices)
 		if err != nil {
 			return err
@@ -294,7 +297,7 @@ func Start(ctx context.Context, o Options) error {
 			if err != nil {
 				return err
 			}
-			t := gateway.Task{Schema: gateway.TaskSchema, Request: llm.Request{Role: "hunt", Model: config.Model, Provider: config.Provider, ExpectedModel: config.ExpectedModel, ExpectedProvider: config.ExpectedProvider, PromptRevision: PromptRevision, Messages: []llm.Message{{Role: "system", Content: prompt}, {Role: "user", Content: string(b)}}, InputTokenBound: config.InputTokenBound, MaxOutputTokens: config.MaxOutputTokens, JSONOutput: true}, PricingSHA: prices.SHA, MaxAttempts: config.MaxAttempts, TimeoutSeconds: config.TimeoutSeconds}
+			t := gateway.Task{Schema: gateway.TaskSchema, Request: llm.Request{Role: "hunt", Model: config.Model, Provider: config.Provider, ExpectedModel: config.ExpectedModel, ExpectedProvider: config.ExpectedProvider, PromptRevision: PromptRevision, Messages: []llm.Message{{Role: "system", Content: prompt}, {Role: "user", Content: string(b)}}, InputTokenBound: config.InputTokenBound, MaxOutputTokens: config.MaxOutputTokens, ReasoningMaxTokens: config.ReasoningMaxTokens, ReasoningEffort: config.ReasoningEffort, JSONOutput: true}, PricingSHA: prices.SHA, MaxAttempts: config.MaxAttempts, TimeoutSeconds: config.TimeoutSeconds}
 			raw, _ := json.Marshal(t)
 			if _, err := gateway.Parse(raw); err != nil {
 				return err

@@ -89,6 +89,11 @@ func (c *Client) Complete(ctx context.Context, input llm.Request) (*llm.Result, 
 		return nil, err
 	}
 	body := map[string]any{"model": input.Model, "messages": input.Messages, "max_tokens": input.MaxOutputTokens, "stream": false, "provider": map[string]any{"only": []string{input.Provider}, "allow_fallbacks": false, "require_parameters": true}}
+	if input.ReasoningMaxTokens > 0 {
+		body["reasoning"] = map[string]any{"max_tokens": input.ReasoningMaxTokens}
+	} else if input.ReasoningEffort != "" {
+		body["reasoning"] = map[string]any{"effort": input.ReasoningEffort}
+	}
 	if input.JSONOutput {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
