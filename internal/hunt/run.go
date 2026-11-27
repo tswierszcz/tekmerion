@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -307,33 +308,94 @@ func Start(ctx context.Context, o Options) error {
 	return err
 }
 
+// orderByReferences puts the entry method first, then same-class methods whose
+// names are referenced from already ordered method bodies (breadth-first, so
+// direct callees precede their own callees), then every other method. Within a
+// level methods keep name/descriptor order. Name matching is a deterministic
+// source heuristic: it includes every overload of a referenced name and may
+// include names that only appear in comments or strings. It orders context; it
+// is not evidence of a call.
+func orderByReferences(entries []sourceindex.Entry, name, descriptor string, body func(sourceindex.Entry) (string, bool)) []sourceindex.Entry {
+	sorted := append([]sourceindex.Entry{}, entries...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Name+sorted[i].Descriptor < sorted[j].Name+sorted[j].Descriptor
+	})
+	byName := map[string][]int{}
+	for i, e := range sorted {
+		byName[e.Name] = append(byName[e.Name], i)
+	}
+	used := make([]bool, len(sorted))
+	order := []sourceindex.Entry{}
+	queue := []int{}
+	for i, e := range sorted {
+		if e.Name == name && e.Descriptor == descriptor {
+			used[i] = true
+			queue = append(queue, i)
+		}
+	}
+	for len(queue) > 0 {
+		i := queue[0]
+		queue = queue[1:]
+		order = append(order, sorted[i])
+		text, ok := body(sorted[i])
+		if !ok {
+			continue
+		}
+		for _, m := range referencePattern.FindAllStringSubmatch(text, -1) {
+			for _, j := range byName[m[1]] {
+				if !used[j] {
+					used[j] = true
+					queue = append(queue, j)
+				}
+			}
+		}
+	}
+	for i, e := range sorted {
+		if !used[i] {
+			order = append(order, e)
+		}
+	}
+	return order
+}
+
+var referencePattern = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
+
 // Expansion is deliberately limited to the entry's exact class-file identity.
 // Cross-class callees require a future logged context expansion, not invented code.
 func buildContext(ctx context.Context, s *state.Store, v *prepare.Verified, rc recon.Context, architecture recon.Output, u state.CoverageSeed, p recon.UnitPayload) (Context, error) {
 	c := Context{Schema: ContextSchema, ParentContextSHA: p.ContextSHA, Unit: u, Entry: p.Entry, Repository: rc.Repository, AnalysisID: rc.AnalysisID, PreparedSHA: rc.PreparedSHA, PromptSHA: hash([]byte(prompt)), Methods: []Method{}, Excerpts: []recon.Excerpt{}, Declarations: rc.Declarations, Recon: architecture, Gaps: append([]string{}, architecture.Gaps...)}
-	c.Gaps = append(c.Gaps, "Hunt context expands at most 16 methods from the exact entry class; cross-class and runtime behavior remain unexamined", "source review and graph reachability do not establish caller authority or a reproduced security effect")
-	entries := append([]sourceindex.Entry{}, v.Index.Entries...)
-	sort.Slice(entries, func(i, j int) bool {
-		a, b := entries[i], entries[j]
-		ai := a.Name == p.Entry.Method.Name && a.Descriptor == p.Entry.Method.Descriptor
-		bi := b.Name == p.Entry.Method.Name && b.Descriptor == p.Entry.Method.Descriptor
-		if ai != bi {
-			return ai
-		}
-		return a.Name+a.Descriptor < b.Name+b.Descriptor
-	})
+	c.Gaps = append(c.Gaps, "Hunt context expands at most 16 methods from the exact entry class, ordered by same-class method names referenced in source starting from the entry (a textual heuristic, not a verified call graph; overloads are included by name); cross-class and runtime behavior remain unexamined", "source review and graph reachability do not establish caller authority or a reproduced security effect")
 	artifacts := map[string]string{v.Run.Artifacts.App.Path: v.Run.Artifacts.App.SHA256}
 	for _, a := range v.Run.Artifacts.Deps {
 		artifacts[a.Path] = a.SHA256
 	}
+	entries := []sourceindex.Entry{}
+	for _, e := range v.Index.Entries {
+		if artifacts[e.Artifact] == p.Entry.ArtifactSHA && e.Class == p.Entry.Method.Class && e.ClassSHA256 == p.Entry.Method.ClassSHA256 {
+			entries = append(entries, e)
+		}
+	}
+	files := map[string][]string{}
+	body := func(e sourceindex.Entry) (string, bool) {
+		if e.Binding != sourceindex.BindingBuildVerified || e.Path == nil || e.SourceSHA256 == nil || e.LineStart == nil || e.LineEnd == nil {
+			return "", false
+		}
+		lines, ok := files[*e.Path]
+		if !ok {
+			raw, err := prepare.ReadFile(v.Work+"/src", *e.Path, 2<<20)
+			if err == nil && hash(raw) == *e.SourceSHA256 && utf8.Valid(raw) {
+				lines = strings.Split(string(raw), "\n")
+			}
+			files[*e.Path] = lines
+		}
+		if *e.LineStart < 1 || *e.LineEnd < *e.LineStart || *e.LineEnd > len(lines) {
+			return "", false
+		}
+		return strings.Join(lines[*e.LineStart-1:*e.LineEnd], "\n"), true
+	}
+	entries = orderByReferences(entries, p.Entry.Method.Name, p.Entry.Method.Descriptor, body)
 	seenMethods := map[string]bool{}
 	for _, e := range entries {
-		if artifacts[e.Artifact] != p.Entry.ArtifactSHA {
-			continue
-		}
-		if e.Class != p.Entry.Method.Class || e.ClassSHA256 != p.Entry.Method.ClassSHA256 {
-			continue
-		}
 		if len(c.Methods) >= 16 {
 			c.Gaps = append(c.Gaps, "same-class method limit reached")
 			break

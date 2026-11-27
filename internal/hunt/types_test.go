@@ -140,3 +140,34 @@ func TestEchoedInputFieldsRejected(t *testing.T) {
 		}
 	}
 }
+func TestOrderByReferencesPutsCalleesFirst(t *testing.T) {
+	e := func(name, desc string) sourceindex.Entry { return sourceindex.Entry{Name: name, Descriptor: desc} }
+	bodies := map[string]string{
+		"unpackEntry(Ljava/io/File;)Z":     "ZipFile zf = open(zip);\n// addEntry( in a comment still counts as a reference\nreturn doUnpackEntry(zf, name, file);",
+		"doUnpackEntry(LZipFile;)Z":        "File target = new File(dir, entry.getName());\ncopy(in, target);",
+		"doUnpackEntry(LZipFile;)[B":       "return read(zf);",
+		"copy(LInputStream;LFile;)V":       "out.write(buf);",
+		"addEntry(LFile;)V":                "pack(file);",
+		"addEntries(LFile;)V":              "addEntry(file);",
+		"aardvark()V":                      "",
+		"unpackEntry(Ljava/lang/String;)Z": "return false;",
+	}
+	entries := []sourceindex.Entry{e("addEntries", "(LFile;)V"), e("addEntry", "(LFile;)V"), e("aardvark", "()V"), e("copy", "(LInputStream;LFile;)V"), e("doUnpackEntry", "(LZipFile;)Z"), e("doUnpackEntry", "(LZipFile;)[B"), e("unpackEntry", "(Ljava/io/File;)Z"), e("unpackEntry", "(Ljava/lang/String;)Z")}
+	body := func(x sourceindex.Entry) (string, bool) { b, ok := bodies[x.Name+x.Descriptor]; return b, ok }
+	got := []string{}
+	for _, x := range orderByReferences(entries, "unpackEntry", "(Ljava/io/File;)Z", body) {
+		got = append(got, x.Name+x.Descriptor)
+	}
+	want := []string{
+		"unpackEntry(Ljava/io/File;)Z",
+		// direct references from the entry, in name/descriptor order
+		"addEntry(LFile;)V", "doUnpackEntry(LZipFile;)Z", "doUnpackEntry(LZipFile;)[B",
+		// second level: referenced from the direct references
+		"copy(LInputStream;LFile;)V",
+		// everything else, in name/descriptor order
+		"aardvark()V", "addEntries(LFile;)V", "unpackEntry(Ljava/lang/String;)Z",
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("order\n got %v\nwant %v", got, want)
+	}
+}
