@@ -96,6 +96,9 @@ func Report(ctx context.Context, s *state.Store, snap *state.Snapshot) (string, 
 	}
 	b.WriteString("Limits of this result:\n\n")
 	for _, g := range c.Gaps {
+		if g == experiment.PendingVerificationGap { // contexts recorded before it was dropped
+			continue
+		}
 		fmt.Fprintf(&b, "- %s\n", cell(g))
 	}
 	b.WriteString("\nA confirmed label means the claims held under independent review and the effect was reproduced twice within the stated scope. It does not establish novelty, severity or that a CVE exists.\n\n")
