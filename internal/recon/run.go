@@ -71,7 +71,7 @@ func Start(ctx context.Context, options Options) error {
 	}
 	if options.Model != nil {
 		config := options.Model
-		if config.Schema != "tekmerion-recon-model-1" || !config.AllowSourceContext || options.Budget == nil || config.Model == "" || config.Provider == "" || config.InputTokenBound <= 0 || config.MaxOutputTokens <= 0 || config.MaxAttempts < 1 || config.MaxAttempts > 5 || config.TimeoutSeconds < 1 || config.TimeoutSeconds > 120 {
+		if config.Schema != "tekmerion-recon-model-1" || !config.AllowSourceContext || options.Budget == nil || config.Model == "" || config.Provider == "" || config.InputTokenBound <= 0 || config.MaxOutputTokens <= 0 || config.MaxAttempts < 1 || config.MaxAttempts > 5 || config.TimeoutSeconds < 1 || config.TimeoutSeconds > llm.MaxTimeoutSeconds {
 			return fmt.Errorf("Recon model mode needs bounded settings, source-context permission and a budget")
 		}
 		if err := options.Budget.Validate(); err != nil {

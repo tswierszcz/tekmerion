@@ -159,3 +159,11 @@ func TestJSONEscapedCredentialRedaction(t *testing.T) {
 		t.Fatal("escaped credential retained")
 	}
 }
+func TestClientTimeoutBound(t *testing.T) {
+	if _, err := New(Config{APIKey: "k", Timeout: llm.MaxTimeoutSeconds * time.Second}); err != nil {
+		t.Fatalf("rejected the maximum request timeout: %v", err)
+	}
+	if _, err := New(Config{APIKey: "k", Timeout: (llm.MaxTimeoutSeconds + 1) * time.Second}); err == nil {
+		t.Fatal("accepted a timeout above the cap")
+	}
+}

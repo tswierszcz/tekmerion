@@ -241,3 +241,19 @@ func TestNoHTTPOnPreflightOrBudgetFailure(t *testing.T) {
 		t.Fatal("HTTP called despite exhausted reservation budget")
 	}
 }
+func TestTaskTimeoutBound(t *testing.T) {
+	task := Task{Schema: TaskSchema, PricingSHA: "sha256:p", MaxAttempts: 1, Request: llm.Request{Role: "hunt", Model: "test/model", Provider: "provider", PromptRevision: "hunt-test-1", InputTokenBound: 100, MaxOutputTokens: 20, JSONOutput: true, Messages: []llm.Message{{Role: "user", Content: "Return JSON"}}}}
+	for _, tc := range []struct {
+		seconds int
+		ok      bool
+	}{{0, false}, {1, true}, {llm.MaxTimeoutSeconds, true}, {llm.MaxTimeoutSeconds + 1, false}} {
+		task.TimeoutSeconds = tc.seconds
+		raw, _ := json.Marshal(task)
+		if _, err := Parse(raw); (err == nil) != tc.ok {
+			t.Errorf("timeout %d s: accepted=%v, want %v (%v)", tc.seconds, err == nil, tc.ok, err)
+		}
+	}
+	if llm.MaxTimeoutSeconds < 300 {
+		t.Fatalf("request timeout cap %d s is below what slow reasoning models need", llm.MaxTimeoutSeconds)
+	}
+}

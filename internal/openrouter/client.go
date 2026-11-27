@@ -57,7 +57,7 @@ func New(config Config) (*Client, error) {
 	if config.Timeout == 0 {
 		config.Timeout = 30 * time.Second
 	}
-	if config.Timeout < 0 || config.Timeout > 2*time.Minute {
+	if config.Timeout < 0 || config.Timeout > llm.MaxTimeoutSeconds*time.Second {
 		return nil, fmt.Errorf("model timeout must be bounded to two minutes")
 	}
 	if config.MaxResponseBytes == 0 {
