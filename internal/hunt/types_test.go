@@ -2,6 +2,7 @@ package hunt
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -141,33 +142,73 @@ func TestEchoedInputFieldsRejected(t *testing.T) {
 	}
 }
 func TestOrderByReferencesPutsCalleesFirst(t *testing.T) {
-	e := func(name, desc string) sourceindex.Entry { return sourceindex.Entry{Name: name, Descriptor: desc} }
-	bodies := map[string]string{
-		"unpackEntry(Ljava/io/File;)Z":     "ZipFile zf = open(zip);\n// addEntry( in a comment still counts as a reference\nreturn doUnpackEntry(zf, name, file);",
-		"doUnpackEntry(LZipFile;)Z":        "File target = new File(dir, entry.getName());\ncopy(in, target);",
-		"doUnpackEntry(LZipFile;)[B":       "return read(zf);",
-		"copy(LInputStream;LFile;)V":       "out.write(buf);",
-		"addEntry(LFile;)V":                "pack(file);",
-		"addEntries(LFile;)V":              "addEntry(file);",
-		"aardvark()V":                      "",
-		"unpackEntry(Ljava/lang/String;)Z": "return false;",
+	const outer = "z.ZipUtil"
+	file := "ZipUtil.java"
+	e := func(class, name, desc string, start, end int) sourceindex.Entry {
+		return sourceindex.Entry{Class: class, Name: name, Descriptor: desc, Path: &file, LineStart: &start, LineEnd: &end}
 	}
-	entries := []sourceindex.Entry{e("addEntries", "(LFile;)V"), e("addEntry", "(LFile;)V"), e("aardvark", "()V"), e("copy", "(LInputStream;LFile;)V"), e("doUnpackEntry", "(LZipFile;)Z"), e("doUnpackEntry", "(LZipFile;)[B"), e("unpackEntry", "(Ljava/io/File;)Z"), e("unpackEntry", "(Ljava/lang/String;)Z")}
-	body := func(x sourceindex.Entry) (string, bool) { b, ok := bodies[x.Name+x.Descriptor]; return b, ok }
+	bodies := map[string]string{
+		outer + "#unpack(Ljava/io/InputStream;Ljava/io/File;)V":                      "unpack(is, dir, IDENTITY, null);",
+		outer + "#unpack(Ljava/io/InputStream;Ljava/io/File;LNameMapper;LCharset;)V": "log(\"a, b\");\niterate(is, new Unpacker(dir, mapper), charset);",
+		outer + "#iterate(Ljava/io/InputStream;LZipEntryCallback;LCharset;)V":        "while (e != null) { action.process(in, e); }\n// iterate( in a comment still counts\nnew ZipEntryCallback() { };",
+		outer + "$Unpacker#<init>(Ljava/io/File;LNameMapper;)V":                      "this.dir = dir;",
+		outer + "$Unpacker#process(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V":  "File f = new File(dir, mapper.map(e.getName()));\ncopy(in, f);",
+		outer + "#copy(Ljava/io/InputStream;Ljava/io/File;)V":                        "",
+		outer + "$Unwraper#process(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V":  "",
+		outer + "$7#process(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V":         "",
+		outer + "$3#process(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V":         "",
+	}
+	entries := []sourceindex.Entry{
+		e(outer, "unpack", "(Ljava/io/InputStream;Ljava/io/File;)V", 10, 11),
+		e(outer, "unpack", "(Ljava/io/InputStream;Ljava/io/File;LNameMapper;LCharset;)V", 20, 22),
+		e(outer, "unpack", "(Ljava/io/File;Ljava/io/File;)V", 30, 31),
+		e(outer, "iterate", "(Ljava/io/InputStream;LZipEntryCallback;LCharset;)V", 40, 60),
+		e(outer, "iterate", "(Ljava/io/File;LZipEntryCallback;)V", 70, 71),
+		e(outer, "copy", "(Ljava/io/InputStream;Ljava/io/File;)V", 80, 81),
+		e(outer, "aardvark", "()V", 90, 91),
+		e(outer+"$Unpacker", "<init>", "(Ljava/io/File;LNameMapper;)V", 100, 102),
+		e(outer+"$Unpacker", "process", "(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V", 103, 110),
+		e(outer+"$Unwraper", "process", "(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V", 120, 125),
+		e(outer+"$7", "process", "(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V", 200, 205),
+		e(outer+"$3", "process", "(Ljava/io/InputStream;Ljava/util/zip/ZipEntry;)V", 50, 55),
+	}
+	body := func(x sourceindex.Entry) (string, bool) {
+		b, ok := bodies[x.Class+"#"+x.Name+x.Descriptor]
+		return b, ok
+	}
 	got := []string{}
-	for _, x := range orderByReferences(entries, "unpackEntry", "(Ljava/io/File;)Z", body) {
-		got = append(got, x.Name+x.Descriptor)
+	for _, x := range orderByReferences(entries, outer, "unpack", "(Ljava/io/InputStream;Ljava/io/File;)V", body) {
+		got = append(got, strings.TrimPrefix(x.Class, outer)+"#"+x.Name+"/"+fmt.Sprint(descriptorArity(x.Descriptor)))
 	}
 	want := []string{
-		"unpackEntry(Ljava/io/File;)Z",
-		// direct references from the entry, in name/descriptor order
-		"addEntry(LFile;)V", "doUnpackEntry(LZipFile;)Z", "doUnpackEntry(LZipFile;)[B",
-		// second level: referenced from the direct references
-		"copy(LInputStream;LFile;)V",
-		// everything else, in name/descriptor order
-		"aardvark()V", "addEntries(LFile;)V", "unpackEntry(Ljava/lang/String;)Z",
+		"#unpack/2",
+		// unpack(is, dir, IDENTITY, null) has four arguments: only that overload
+		"#unpack/4",
+		// iterate(..., new Unpacker(...), charset): the three-argument iterate and the Unpacker constructor
+		"#iterate/3", "$Unpacker#<init>/2",
+		// action.process(in, e): only activated classes. Unpacker is already active; $3 becomes
+		// active because it is declared inside iterate's lines. $7 and $Unwraper never do.
+		// iterate( in a comment adds nothing new.
+		"$Unpacker#process/2", "$3#process/2",
+		// copy(in, f) from Unpacker.process
+		"#copy/2",
+		// everything else: entry class first, then nested, by name/descriptor
+		"#aardvark/0", "#iterate/2", "#unpack/2",
+		"$7#process/2", "$Unwraper#process/2",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("order\n got %v\nwant %v", got, want)
+	}
+}
+func TestArityHelpers(t *testing.T) {
+	for d, want := range map[string]int{"()V": 0, "(I)V": 1, "(Ljava/io/File;[BI)Z": 3, "([[Ljava/lang/String;J)V": 2} {
+		if got := descriptorArity(d); got != want {
+			t.Errorf("descriptorArity(%s) = %d, want %d", d, got, want)
+		}
+	}
+	for text, want := range map[string]int{"f()": 0, "f( )": 0, "f(a)": 1, "f(a, g(b, c), \"x,y\", ',')": 4, "f(new int[]{1, 2}, m.get(k))": 2, "f(a, b": -1} {
+		if got := callArity(text, strings.Index(text, "(")); got != want {
+			t.Errorf("callArity(%q) = %d, want %d", text, got, want)
+		}
 	}
 }

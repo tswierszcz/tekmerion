@@ -308,44 +308,117 @@ func Start(ctx context.Context, o Options) error {
 	return err
 }
 
-// orderByReferences puts the entry method first, then same-class methods whose
-// names are referenced from already ordered method bodies (breadth-first, so
-// direct callees precede their own callees), then every other method. Within a
-// level methods keep name/descriptor order. Name matching is a deterministic
-// source heuristic: it includes every overload of a referenced name and may
-// include names that only appear in comments or strings. It orders context; it
-// is not evidence of a call.
-func orderByReferences(entries []sourceindex.Entry, name, descriptor string, body func(sourceindex.Entry) (string, bool)) []sourceindex.Entry {
+// orderByReferences puts the entry method first, then methods referenced from
+// already ordered method bodies (breadth-first, so direct callees precede their
+// own callees), then every other method. A reference is a name followed by an
+// argument list; it selects methods with that name and the same parameter
+// count. Methods of a nested class are eligible only once the class is
+// activated: a named nested class by a reference to its simple name (new
+// Unpacker(...) selects its constructors; Unpacker.x also activates it), an
+// anonymous class (Outer$1) by being declared inside an ordered method's lines.
+// On activation the class's methods matching earlier references are queued.
+// Within a level the entry's class comes first, then name/descriptor/class
+// order. This is a deterministic source heuristic, not a call graph: it keeps
+// every same-arity overload, cannot resolve receiver types and may match names
+// in comments or strings. It orders context; it is not evidence of a call.
+func orderByReferences(entries []sourceindex.Entry, class, name, descriptor string, body func(sourceindex.Entry) (string, bool)) []sourceindex.Entry {
 	sorted := append([]sourceindex.Entry{}, entries...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Name+sorted[i].Descriptor < sorted[j].Name+sorted[j].Descriptor
-	})
-	byName := map[string][]int{}
-	for i, e := range sorted {
-		byName[e.Name] = append(byName[e.Name], i)
+	key := func(e sourceindex.Entry) string {
+		rank := "1"
+		if e.Class == class {
+			rank = "0"
+		}
+		return rank + "\x00" + e.Name + e.Descriptor + "\x00" + e.Class
 	}
+	sort.SliceStable(sorted, func(i, j int) bool { return key(sorted[i]) < key(sorted[j]) })
+	simple := func(c string) string { return c[strings.LastIndexAny(c, ".$")+1:] }
+	anonymous := func(c string) bool {
+		n := simple(c)
+		return n != "" && strings.Trim(n, "0123456789") == ""
+	}
+	refName := func(e sourceindex.Entry) string {
+		if e.Name == "<init>" && e.Class != class {
+			return simple(e.Class)
+		}
+		return e.Name
+	}
+	type ref struct {
+		name  string
+		arity int
+	}
+	byRef := map[ref][]int{}
+	byClass := map[string][]int{}
+	for i, e := range sorted {
+		r := ref{refName(e), descriptorArity(e.Descriptor)}
+		byRef[r] = append(byRef[r], i)
+		byClass[e.Class] = append(byClass[e.Class], i)
+	}
+	active := map[string]bool{class: true}
+	seen := map[ref]bool{}
 	used := make([]bool, len(sorted))
 	order := []sourceindex.Entry{}
 	queue := []int{}
-	for i, e := range sorted {
-		if e.Name == name && e.Descriptor == descriptor {
+	push := func(i int) {
+		if !used[i] {
 			used[i] = true
 			queue = append(queue, i)
+		}
+	}
+	activate := func(c string) {
+		if active[c] {
+			return
+		}
+		active[c] = true
+		for _, i := range byClass[c] {
+			if seen[ref{refName(sorted[i]), descriptorArity(sorted[i].Descriptor)}] {
+				push(i)
+			}
+		}
+	}
+	for i, e := range sorted {
+		if e.Class == class && e.Name == name && e.Descriptor == descriptor {
+			push(i)
 		}
 	}
 	for len(queue) > 0 {
 		i := queue[0]
 		queue = queue[1:]
-		order = append(order, sorted[i])
-		text, ok := body(sorted[i])
+		cur := sorted[i]
+		order = append(order, cur)
+		text, ok := body(cur)
 		if !ok {
 			continue
 		}
-		for _, m := range referencePattern.FindAllStringSubmatch(text, -1) {
-			for _, j := range byName[m[1]] {
-				if !used[j] {
-					used[j] = true
-					queue = append(queue, j)
+		for _, m := range referencePattern.FindAllStringSubmatchIndex(text, -1) {
+			r := ref{text[m[2]:m[3]], callArity(text, m[1]-1)}
+			seen[r] = true
+			for _, j := range byRef[r] {
+				if c := sorted[j].Class; c != class && !anonymous(c) && sorted[j].Name == "<init>" {
+					activate(c)
+				}
+				if active[sorted[j].Class] {
+					push(j)
+				}
+			}
+		}
+		for _, m := range qualifierPattern.FindAllStringSubmatch(text, -1) {
+			for c := range byClass {
+				if c != class && !anonymous(c) && simple(c) == m[1] {
+					activate(c)
+				}
+			}
+		}
+		if cur.Path != nil && cur.LineStart != nil && cur.LineEnd != nil {
+			for c, idx := range byClass {
+				if !anonymous(c) || active[c] {
+					continue
+				}
+				for _, j := range idx {
+					e := sorted[j]
+					if e.Path != nil && *e.Path == *cur.Path && e.LineStart != nil && e.LineEnd != nil && *e.LineStart >= *cur.LineStart && *e.LineEnd <= *cur.LineEnd {
+						activate(c)
+						break
+					}
 				}
 			}
 		}
@@ -358,20 +431,96 @@ func orderByReferences(entries []sourceindex.Entry, name, descriptor string, bod
 	return order
 }
 
-var referencePattern = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
+var (
+	referencePattern = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
+	qualifierPattern = regexp.MustCompile(`\b([A-Z][A-Za-z0-9_$]*)\s*\.`)
+)
 
-// Expansion is deliberately limited to the entry's exact class-file identity.
-// Cross-class callees require a future logged context expansion, not invented code.
+// descriptorArity counts the parameters of a JVM method descriptor.
+func descriptorArity(d string) int {
+	n := 0
+	for i := 1; i < len(d) && d[i] != ')'; i++ {
+		for d[i] == '[' {
+			i++
+		}
+		if d[i] == 'L' {
+			for i < len(d) && d[i] != ';' {
+				i++
+			}
+		}
+		n++
+	}
+	return n
+}
+
+// callArity counts the arguments of the call whose '(' is at open, skipping
+// nested brackets and string/char literals. It returns -1 for an unbalanced list.
+func callArity(text string, open int) int {
+	depth, n, empty := 0, 0, true
+	for i := open; i < len(text); i++ {
+		switch ch := text[i]; ch {
+		case '"', '\'':
+			for i++; i < len(text) && text[i] != ch; i++ {
+				if text[i] == '\\' {
+					i++
+				}
+			}
+			empty = false
+		case '(', '[', '{':
+			if depth > 0 {
+				empty = false
+			}
+			depth++
+		case ')', ']', '}':
+			depth--
+			if depth == 0 {
+				if empty {
+					return 0
+				}
+				return n + 1
+			}
+		case ',':
+			if depth == 1 {
+				n++
+			}
+		case ' ', '\t', '\n', '\r':
+		default:
+			empty = false
+		}
+	}
+	return -1
+}
+
+// Expansion is deliberately limited to the entry's class and classes nested in
+// the same top-level class and source file. Other classes require a future
+// logged context expansion, not invented code.
 func buildContext(ctx context.Context, s *state.Store, v *prepare.Verified, rc recon.Context, architecture recon.Output, u state.CoverageSeed, p recon.UnitPayload) (Context, error) {
 	c := Context{Schema: ContextSchema, ParentContextSHA: p.ContextSHA, Unit: u, Entry: p.Entry, Repository: rc.Repository, AnalysisID: rc.AnalysisID, PreparedSHA: rc.PreparedSHA, PromptSHA: hash([]byte(prompt)), Methods: []Method{}, Excerpts: []recon.Excerpt{}, Declarations: rc.Declarations, Recon: architecture, Gaps: append([]string{}, architecture.Gaps...)}
-	c.Gaps = append(c.Gaps, "Hunt context expands at most 16 methods from the exact entry class, ordered by same-class method names referenced in source starting from the entry (a textual heuristic, not a verified call graph; overloads are included by name); cross-class and runtime behavior remain unexamined", "source review and graph reachability do not establish caller authority or a reproduced security effect")
+	c.Gaps = append(c.Gaps, "Hunt context expands at most 16 methods from the exact entry class and classes nested in the same top-level class and source file, ordered by method and nested-class constructor names referenced in source starting from the entry (a textual heuristic, not a verified call graph; every overload and every nested class with a matching method name is included by name); other classes and runtime behavior remain unexamined", "source review and graph reachability do not establish caller authority or a reproduced security effect")
 	artifacts := map[string]string{v.Run.Artifacts.App.Path: v.Run.Artifacts.App.SHA256}
 	for _, a := range v.Run.Artifacts.Deps {
 		artifacts[a.Path] = a.SHA256
 	}
+	// The pool is the entry's exact class plus classes nested in the same
+	// top-level class and compiled from the same source file (Outer$Inner,
+	// Outer$1). Nested classes hold callbacks and helpers that the entry
+	// reaches through constructors and interface calls.
+	top, _, _ := strings.Cut(p.Entry.Method.Class, "$")
+	var entryPath string
+	for _, e := range v.Index.Entries {
+		if artifacts[e.Artifact] == p.Entry.ArtifactSHA && e.Class == p.Entry.Method.Class && e.ClassSHA256 == p.Entry.Method.ClassSHA256 && e.Path != nil {
+			entryPath = *e.Path
+			break
+		}
+	}
 	entries := []sourceindex.Entry{}
 	for _, e := range v.Index.Entries {
-		if artifacts[e.Artifact] == p.Entry.ArtifactSHA && e.Class == p.Entry.Method.Class && e.ClassSHA256 == p.Entry.Method.ClassSHA256 {
+		if artifacts[e.Artifact] != p.Entry.ArtifactSHA {
+			continue
+		}
+		same := e.Class == p.Entry.Method.Class && e.ClassSHA256 == p.Entry.Method.ClassSHA256
+		nested := e.Class != p.Entry.Method.Class && (e.Class == top || strings.HasPrefix(e.Class, top+"$")) && entryPath != "" && e.Path != nil && *e.Path == entryPath
+		if same || nested {
 			entries = append(entries, e)
 		}
 	}
@@ -393,11 +542,11 @@ func buildContext(ctx context.Context, s *state.Store, v *prepare.Verified, rc r
 		}
 		return strings.Join(lines[*e.LineStart-1:*e.LineEnd], "\n"), true
 	}
-	entries = orderByReferences(entries, p.Entry.Method.Name, p.Entry.Method.Descriptor, body)
+	entries = orderByReferences(entries, p.Entry.Method.Class, p.Entry.Method.Name, p.Entry.Method.Descriptor, body)
 	seenMethods := map[string]bool{}
 	for _, e := range entries {
 		if len(c.Methods) >= 16 {
-			c.Gaps = append(c.Gaps, "same-class method limit reached")
+			c.Gaps = append(c.Gaps, "entry-class method limit reached")
 			break
 		}
 		if e.Binding != sourceindex.BindingBuildVerified || e.Path == nil || e.SourceSHA256 == nil || e.LineStart == nil || e.LineEnd == nil {
