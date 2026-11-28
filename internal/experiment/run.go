@@ -109,8 +109,10 @@ func Start(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if snap.Run.Status != "completed" {
-		return fmt.Errorf("experiment requires a completed Hunt run")
+	// A finished Hunt run is "failed" when some unit's Hunt task failed and was
+	// recorded as blocked coverage; its accepted candidates remain usable.
+	if snap.Run.Status != "completed" && snap.Run.Status != "failed" {
+		return fmt.Errorf("experiment requires a finished Hunt run")
 	}
 	if err := parent.Verify(ctx, snap); err != nil {
 		return err

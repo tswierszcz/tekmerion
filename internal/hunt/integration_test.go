@@ -22,9 +22,10 @@ import (
 )
 
 type localModel struct {
-	calls    int
-	outputs  map[string]json.RawMessage
-	badFirst bool
+	calls       int
+	outputs     map[string]json.RawMessage
+	badFirst    bool
+	lengthFirst bool
 }
 
 func (p *localModel) Complete(_ context.Context, r llm.Request) (*llm.Result, error) {
@@ -54,6 +55,11 @@ func (p *localModel) Complete(_ context.Context, r llm.Request) (*llm.Result, er
 	}
 	zero := state.Money(0)
 	tokens := int64(100)
+	if p.lengthFirst && p.calls == 1 {
+		// Like a reasoning model that spent the whole output bound on reasoning:
+		// a settled, non-retryable completion with no usable answer.
+		return &llm.Result{HTTPStatus: 200, RawResponse: []byte(`{"choices":[{"finish_reason":"length"}]}`), ID: "local-test-length", Model: r.Model, Provider: r.Provider, FinishReason: "length", Cost: &zero, Tokens: &tokens}, fmt.Errorf("model completion did not finish normally")
+	}
 	return &llm.Result{HTTPStatus: 200, RawResponse: raw, ID: fmt.Sprintf("local-test-%d", p.calls), Model: r.Model, Provider: r.Provider, Content: string(raw), Cost: &zero, Tokens: &tokens}, nil
 }
 func preparedRecon(t *testing.T) (context.Context, string, string, string) {
@@ -343,4 +349,52 @@ func (q rejectProof) Query(ctx context.Context, raw []byte) (*ariadne.Result, er
 	result.Outcome = ariadne.OutcomeUnusable
 	result.ValidationScope = ""
 	return result, fmt.Errorf("test: rejected graph proof")
+}
+
+func TestHuntFailedUnitBlocksOnlyItself(t *testing.T) {
+	ctx, work, parent, bin := preparedRecon(t)
+	dir := filepath.Join(t.TempDir(), "wave")
+	o := modelOptions(t, work, parent, bin, dir)
+	if err := Start(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	_, _, m := openRun(t, ctx, dir)
+	if len(m.Jobs) < 2 {
+		t.Skip("fixture needs at least two planned units")
+	}
+	provider := &localModel{lengthFirst: true}
+	if err := Resume(ctx, dir, provider, nil); err != nil {
+		t.Fatalf("one failed unit stopped the wave: %v", err)
+	}
+	s, snap, _ := openRun(t, ctx, dir)
+	if provider.calls != len(m.Jobs) {
+		t.Fatalf("failed unit was retried or later units skipped: calls=%d jobs=%d", provider.calls, len(m.Jobs))
+	}
+	if snap.Run.Status != "failed" || len(snap.CoverageHistory) != len(m.Jobs) {
+		t.Fatalf("run must finish as failed with every unit accounted for: %s %d", snap.Run.Status, len(snap.CoverageHistory))
+	}
+	first := snap.CoverageHistory[0]
+	for _, e := range snap.CoverageHistory {
+		if e.TaskID == m.Jobs[0].TriageID {
+			first = e
+		}
+	}
+	if first.Status != "blocked" || !strings.Contains(first.Reason, "did not finish normally") {
+		t.Fatalf("failed unit not recorded as blocked with its diagnostic: %+v", first)
+	}
+	var f FailedUnit
+	raw, err := s.Get(ctx, first.PayloadSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &f); err != nil || f.Schema != "tekmerion-hunt-failed-unit-1" || len(f.Attempts) != 1 || f.Attempts[0].Outcome != "failed" {
+		t.Fatalf("failed-unit payload: %v %+v", err, f)
+	}
+	if err := s.Verify(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	// Resume of a finished wave is a no-op and makes no further request.
+	if err := Resume(ctx, dir, provider, nil); err != nil || provider.calls != len(m.Jobs) {
+		t.Fatalf("resume repeated work: %v calls=%d", err, provider.calls)
+	}
 }
