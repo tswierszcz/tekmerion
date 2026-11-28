@@ -734,8 +734,8 @@ func Resume(ctx context.Context, dir string, provider llm.Provider, q ariadne.Qu
 		if tt.Status == "completed" {
 			continue
 		}
-		if ht.Status == "failed" || tt.Status == "failed" {
-			return fmt.Errorf("Hunt task failed; inspect immutable diagnostics")
+		if tt.Status == "failed" {
+			return fmt.Errorf("Hunt triage failed; inspect immutable diagnostics")
 		}
 		var c Context
 		if err := decode(ctx, s, job.ContextSHA, &c); err != nil {
@@ -743,6 +743,12 @@ func Resume(ctx context.Context, dir string, provider llm.Provider, q ariadne.Qu
 		}
 		if c.Identity != identity(c) {
 			return fmt.Errorf("saved Hunt context mismatch")
+		}
+		if ht.Status == "failed" {
+			if err := blockFailedUnit(ctx, s, job, c); err != nil {
+				return err
+			}
+			continue
 		}
 		var raw []byte
 		if ht.Status == "completed" {
@@ -770,12 +776,24 @@ func Resume(ctx context.Context, dir string, provider llm.Provider, q ariadne.Qu
 				if e := s.Finish(ctx, *claim, "failed", ht.InputSHA, err.Error()); e != nil {
 					return e
 				}
-				return err
+			} else {
+				err = s.Finish(ctx, *claim, "completed", ht.InputSHA, "")
 			}
-			err = s.Finish(ctx, *claim, "completed", ht.InputSHA, "")
 		}
 		if err != nil {
-			return err
+			// A Hunt task that ended terminally failed (non-retryable model
+			// output, exhausted attempts, invalid recorded output) blocks only its
+			// own unit; budget halts, interruptions and store errors still stop
+			// the wave so that it can be resumed.
+			if failed, e := taskFailed(ctx, s, ht.ID); e != nil {
+				return e
+			} else if !failed {
+				return err
+			}
+			if e := blockFailedUnit(ctx, s, job, c); e != nil {
+				return e
+			}
+			continue
 		}
 		output, err := ParseOutput(raw, c)
 		if err != nil {
@@ -790,4 +808,63 @@ func Resume(ctx context.Context, dir string, provider llm.Provider, q ariadne.Qu
 		}
 	}
 	return nil
+}
+
+// FailedUnit is the payload recorded for a planned unit whose Hunt task ended
+// terminally failed. It carries no semantic conclusion about the unit.
+type FailedUnit struct {
+	Schema     string          `json:"schema_version"`
+	UnitID     string          `json:"unit_id"`
+	TaskID     string          `json:"task_id"`
+	ContextSHA string          `json:"context_sha256"`
+	Attempts   []state.Attempt `json:"attempts"`
+}
+
+func taskFailed(ctx context.Context, s *state.Store, id string) (bool, error) {
+	snap, err := s.Snapshot(ctx)
+	if err != nil {
+		return false, err
+	}
+	t, err := taskByID(snap, id)
+	if err != nil {
+		return false, err
+	}
+	return t.Status == "failed", nil
+}
+
+// blockFailedUnit records a blocked coverage event for a unit whose Hunt task
+// failed and completes its triage task, so the rest of the wave can continue.
+func blockFailedUnit(ctx context.Context, s *state.Store, job Job, c Context) error {
+	snap, err := s.Snapshot(ctx)
+	if err != nil {
+		return err
+	}
+	f := FailedUnit{Schema: "tekmerion-hunt-failed-unit-1", UnitID: c.Unit.ID, TaskID: job.TaskID, ContextSHA: job.ContextSHA, Attempts: []state.Attempt{}}
+	last := ""
+	for _, a := range snap.Attempts {
+		if a.TaskID == job.TaskID {
+			f.Attempts = append(f.Attempts, a)
+			if a.Diagnostic != "" {
+				last = a.Diagnostic
+			}
+		}
+	}
+	if last == "" {
+		last = "no diagnostic recorded"
+	}
+	payload, err := put(ctx, s, f)
+	if err != nil {
+		return err
+	}
+	reason := fmt.Sprintf("Hunt task %s failed after %d attempt(s): %s; no semantic review was recorded for this unit", job.TaskID, len(f.Attempts), last)
+	commit := state.HuntCommit{Candidates: []state.Candidate{}, Occurrences: []state.CandidateOccurrence{}, Event: state.CoverageEvent{UnitID: c.Unit.ID, TaskID: job.TriageID, Status: "blocked", Reason: reason, PayloadSHA: payload}}
+	resultSHA, err := put(ctx, s, Projection{Schema: "tekmerion-hunt-projection-1", ContextSHA: job.ContextSHA, OutputSHA: payload, Commit: commit})
+	if err != nil {
+		return err
+	}
+	claim, err := s.Claim(ctx, snap.Run.ID, job.TriageID, "hunt-blocked-"+rand.Text(), time.Minute)
+	if err != nil {
+		return err
+	}
+	return s.CommitHunt(ctx, *claim, resultSHA, commit)
 }
