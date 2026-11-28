@@ -69,6 +69,8 @@ func TestErrorsMissingCostAndMalformedOutput(t *testing.T) {
 		{"invalid JSON content", strings.Replace(success, `{\"ok\":true}`, `not JSON`, 1), 200, true, false, false},
 		{"unknown route", strings.Replace(success, `"provider":"provider"`, `"provider":"another"`, 1), 200, true, false, false},
 		{"truncated", strings.Replace(success, `"finish_reason":"stop"`, `"finish_reason":"length"`, 1), 200, true, false, false},
+		{"answer only in reasoning", strings.Replace(success, `"content":"{\"ok\":true}"`, `"content":null,"reasoning":"{\"ok\":true}"`, 1), 200, true, true, false},
+		{"empty content and reasoning", strings.Replace(success, `"content":"{\"ok\":true}"`, `"content":null,"reasoning":" "`, 1), 200, true, false, false},
 		{"contradictory usage", strings.Replace(success, `"total_tokens":12`, `"total_tokens":999`, 1), 200, true, false, true},
 		{"fractional scientific cost", strings.Replace(success, `"cost":0`, `"cost":1e-10`, 1), 200, false, false, false},
 	}

@@ -146,8 +146,9 @@ func (c *Client) Complete(ctx context.Context, input llm.Request) (*llm.Result, 
 		Usage    json.RawMessage `json:"usage"`
 		Choices  []struct {
 			Message struct {
-				Content *string `json:"content"`
-				Refusal *string `json:"refusal"`
+				Content   *string `json:"content"`
+				Refusal   *string `json:"refusal"`
+				Reasoning *string `json:"reasoning"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -197,6 +198,14 @@ func (c *Client) Complete(ctx context.Context, input llm.Request) (*llm.Result, 
 	if doc.Model != expectedModel || doc.Provider == "" || !strings.EqualFold(doc.Provider, expectedProvider) {
 		result.RouteMismatch = true
 		return fail("returned model/provider differs from the configured route")
+	}
+	if len(doc.Choices) == 1 && doc.Choices[0].Message.Content == nil && doc.Choices[0].Message.Refusal == nil && doc.Choices[0].FinishReason == "stop" && doc.Choices[0].Message.Reasoning != nil && strings.TrimSpace(*doc.Choices[0].Message.Reasoning) != "" {
+		// Some reasoning models occasionally emit the whole answer in the
+		// reasoning channel and leave content empty. The reasoning text is never
+		// accepted as the answer; a fresh attempt within the task's bound is.
+		result.FinishReason = doc.Choices[0].FinishReason
+		result.Retryable = true
+		return fail("model completion has no content; answer left in the reasoning channel")
 	}
 	if len(doc.Choices) != 1 || doc.Choices[0].Message.Content == nil || doc.Choices[0].Message.Refusal != nil {
 		return fail("model response has no single usable text completion")
