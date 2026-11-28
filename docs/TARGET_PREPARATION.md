@@ -10,7 +10,7 @@ bin/tekmerion locate -work /tmp/tm1 fx.research.Extractor writeEntry '(Ljava/nio
 
 ## 1. Project manifest (`tekmerion-project-1`)
 
-Declared input, [internal/manifest](../internal/manifest/manifest.go). The control example is [testdata/control/project.json](../testdata/control/project.json).
+Declared input, [internal/manifest](../internal/manifest/manifest.go). The control example is [testdata/control/project.json](../testdata/control/project.json). The real-library pilot uses [testdata/pilot/zt-zip-1.12.json](../testdata/pilot/zt-zip-1.12.json): zt-zip 1.12 (before the CVE-2018-1002201 zip slip fix), compiled with javac against slf4j-api 1.6.6, with a file-confinement threat model.
 
 | Field | Content |
 |---|---|

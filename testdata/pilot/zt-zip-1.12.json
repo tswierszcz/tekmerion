@@ -1,0 +1,91 @@
+{
+  "schema_version": "tekmerion-project-1",
+  "target": {
+    "repository": "https://github.com/zeroturnaround/zt-zip",
+    "revision": "bd3f3d77f3709f901fd5180a493ef32e4dfebfa6",
+    "coordinates": "org.zeroturnaround:zt-zip:1.12",
+    "paths": [
+      "pom.xml",
+      "src/main/java"
+    ],
+    "source_roots": [
+      {
+        "path": "src/main/java",
+        "artifact": "zt-zip.jar"
+      }
+    ]
+  },
+  "build": {
+    "network": "allowed",
+    "steps": [
+      {
+        "name": "dirs",
+        "argv": [
+          "mkdir",
+          "-p",
+          "${OUT}/deps",
+          "${WORK}/tmp/classes"
+        ]
+      },
+      {
+        "name": "slf4j-api",
+        "argv": [
+          "mvn",
+          "-B",
+          "-q",
+          "-Dmaven.repo.local=${WORK}/home/m2",
+          "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy",
+          "-Dartifact=org.slf4j:slf4j-api:1.6.6",
+          "-DoutputDirectory=${OUT}/deps"
+        ]
+      },
+      {
+        "name": "compile",
+        "argv": [
+          "sh",
+          "-c",
+          "find src/main/java -name '*.java' | LC_ALL=C sort > \"$$1/files.txt\" && java -m jdk.compiler/com.sun.tools.javac.Main -source 11 -target 11 -nowarn -Xlint:-options -encoding UTF-8 -cp \"$$2\" -d \"$$1/classes\" @\"$$1/files.txt\"",
+          "compile",
+          "${WORK}/tmp",
+          "${OUT}/deps/slf4j-api-1.6.6.jar"
+        ]
+      },
+      {
+        "name": "jar",
+        "argv": [
+          "sh",
+          "-c",
+          "java -m jdk.jartool/sun.tools.jar.Main --create --date=\"$$(date -u -d @\"$$SOURCE_DATE_EPOCH\" +%Y-%m-%dT%H:%M:%SZ)\" --file \"$$1\" -C \"$$2\" .",
+          "jar",
+          "${OUT}/zt-zip.jar",
+          "${WORK}/tmp/classes"
+        ]
+      },
+      {
+        "name": "deps-list",
+        "argv": [
+          "sh",
+          "-c",
+          "printf 'org.slf4j:slf4j-api:jar:1.6.6:compile\\n' > \"$$1\"",
+          "deps-list",
+          "${OUT}/deps.txt"
+        ]
+      }
+    ],
+    "outputs": {
+      "app": "zt-zip.jar",
+      "deps": "deps",
+      "deps_list": "deps.txt"
+    }
+  },
+  "scenario": {
+    "roots": "api",
+    "profile": "generic"
+  },
+  "threat_model": {
+    "principal": "An application calls the zt-zip public API to unpack or transform archives.",
+    "lower_trust_input": "Archive contents, including entry names, come from a lower-trust author than the calling application.",
+    "authority": "The calling application chooses the output directory and is authorized to write only inside it.",
+    "expectation": "Unpacking an archive must not create, overwrite or change permissions of files outside the chosen output directory."
+  }
+}
